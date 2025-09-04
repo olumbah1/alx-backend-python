@@ -1,5 +1,4 @@
 
-#!/usr/bin/python3
 seed = __import__('seed')
 
 connection = seed.connect_db()

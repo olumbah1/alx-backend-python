@@ -1,9 +1,12 @@
-#!/usr/bin/python3
-
 import mysql.connector
 import csv
 import uuid
+import os
 from mysql.connector import Error
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 def connect_db():
     """
@@ -12,9 +15,9 @@ def connect_db():
     """
     try:
         connection = mysql.connector.connect(
-            host='localhost',
-            user='root',
-            password='Olumide'  
+            host=os.getenv('DB_HOST', 'localhost'),
+            user=os.getenv('DB_USER', 'root'),
+            password=os.getenv('DB_PASSWORD')
         )
         if connection.is_connected():
             print("Successfully connected to MySQL server")
@@ -42,10 +45,10 @@ def connect_to_prodev():
     """
     try:
         connection = mysql.connector.connect(
-            host='localhost',
-            user='root',
-            password='Olumide',  
-            database='ALX_prodev'
+            host=os.getenv('DB_HOST', 'localhost'),
+            user=os.getenv('DB_USER', 'root'),
+            password=os.getenv('DB_PASSWORD'),
+            database=os.getenv('DB_NAME', 'ALX_prodev')
         )
         if connection.is_connected():
             print("Successfully connected to ALX_prodev database")
@@ -79,59 +82,72 @@ def create_table(connection):
     except Error as e:
         print(f"Error creating table: {e}")
 
+def create_sample_csv():
+    """Create sample CSV file if it doesn't exist"""
+    import csv
+    import os
+    
+    if not os.path.exists('user_data.csv'):
+        sample_data = [
+            ['user_id', 'name', 'email', 'age'],
+            ['550e8400-e29b-41d4-a716-446655440001', 'John Smith', 'john.smith@email.com', 28],
+            ['550e8400-e29b-41d4-a716-446655440002', 'Sarah Johnson', 'sarah.johnson@gmail.com', 34],
+            ['550e8400-e29b-41d4-a716-446655440003', 'Michael Brown', 'm.brown@yahoo.com', 42],
+            ['550e8400-e29b-41d4-a716-446655440004', 'Emily Davis', 'emily.davis@hotmail.com', 29],
+            ['550e8400-e29b-41d4-a716-446655440005', 'David Wilson', 'david.wilson@outlook.com', 37],
+            ['550e8400-e29b-41d4-a716-446655440006','Jessica Miller','jessica.miller@gmail.com',31],
+            ['550e8400-e29b-41d4-a716-446655440007','Christopher Garcia','c.garcia@email.com',45],
+            ['550e8400-e29b-41d4-a716-446655440008','Amanda Rodriguez','amanda.r@yahoo.com',26],
+            ['550e8400-e29b-41d4-a716-446655440009','Matthew Martinez','matt.martinez@gmail.com',39],
+            ['550e8400-e29b-41d4-a716-446655440010','Ashley Anderson','ashley.anderson@hotmail.com',33]
+        ]
+        
+        with open('user_data.csv', 'w', newline='', encoding='utf-8') as file:
+            writer = csv.writer(file)
+            writer.writerows(sample_data)
+        print("Created user_data.csv file")
+
 def insert_data(connection, csv_file):
     """
     Inserts data from CSV file into the database if it does not exist
     """
+    print(f"=== Starting insert_data function ===")
+    print(f"CSV file: {csv_file}")
+    
+    # Create CSV if it doesn't exist
+    create_sample_csv()
+    
     try:
+        import csv
         cursor = connection.cursor()
         
-        # Read CSV file and insert data
+        # Read CSV file
         with open(csv_file, 'r', newline='', encoding='utf-8') as file:
             csv_reader = csv.DictReader(file)
             
+            count = 0
             for row in csv_reader:
-                # Check if user already exists
+                print(f"Processing: {row['name']}")
+                
+                # Check if user exists
                 check_query = "SELECT user_id FROM user_data WHERE user_id = %s"
                 cursor.execute(check_query, (row['user_id'],))
                 
                 if cursor.fetchone() is None:
                     # Insert new user
-                    insert_query = """
-                    INSERT INTO user_data (user_id, name, email, age)
-                    VALUES (%s, %s, %s, %s)
-                    """
-                    cursor.execute(insert_query, (
-                        row['user_id'],
-                        row['name'],
-                        row['email'],
-                        int(row['age'])
-                    ))
+                    insert_query = "INSERT INTO user_data (user_id, name, email, age) VALUES (%s, %s, %s, %s)"
+                    cursor.execute(insert_query, (row['user_id'], row['name'], row['email'], int(row['age'])))
+                    count += 1
+                    print(f"  Inserted: {row['name']}")
+                else:
+                    print(f"  Already exists: {row['name']}")
         
-        # Commit the changes
+        # Commit changes
         connection.commit()
-        print(f"Data from {csv_file} inserted successfully")
+        print(f"Successfully processed {count} users")
         cursor.close()
         
-    except Error as e:
-        print(f"Error inserting data: {e}")
-        connection.rollback()
-    except FileNotFoundError:
-        print(f"CSV file {csv_file} not found")
     except Exception as e:
-        print(f"Unexpected error: {e}")
-
-# Test the functions (optional - remove if not needed)
-if __name__ == "__main__":
-    # Test connection
-    conn = connect_db()
-    if conn:
-        create_database(conn)
-        conn.close()
-        
-        # Connect to the specific database
-        prodev_conn = connect_to_prodev()
-        if prodev_conn:
-            create_table(prodev_conn)
-            insert_data(prodev_conn, 'user_data.csv')
-            prodev_conn.close()
+        print(f"ERROR: {e}")
+        import traceback
+        traceback.print_exc()
