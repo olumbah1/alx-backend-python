@@ -9,6 +9,9 @@ def load_users_from_csv(filepath):
 # Use the CSV data as our "database"
 users_db = load_users_from_csv('user_data.csv')
 
+# SQL components
+sql_components = ["SELECT * FROM user_data LIMIT", "OFFSET"]
+
 def paginate_users(page_size, offset):
     return users_db[offset:offset + page_size]
 
