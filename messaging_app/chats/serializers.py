@@ -7,8 +7,8 @@ class CustomUserSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = CustomUser
-        fields = ["id", "username", "first_name", 
-                  "last_name", "email", "password", "password_hash",
+        fields = ["user_id", "username", "first_name", 
+                  "last_name", "email", "password",
                   "phone_number", "role", "created_at"]
         
     def create(self, validated_data):
@@ -30,7 +30,7 @@ class MessageSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Message
-        fields = ['message_id', 'sender_id', 'message_body', 'sent_at', 'full_name']
+        fields = ['message_id', 'sender', 'message_body', 'sent_at', 'full_name']
     
     def validate_message_body(self, value):
         if not value.strip():
@@ -40,4 +40,4 @@ class MessageSerializer(serializers.ModelSerializer):
         return value
     
     def get_full_name(self, obj):
-        return f"{obj.sender_id.first_name} {obj.sender_id.last_name}"
+        return f"{obj.sender.first_name} {obj.sender_id.last_name}"
