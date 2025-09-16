@@ -22,11 +22,22 @@ class ConversationSerializer(serializers.ModelSerializer):
     participants_id = serializers.PrimaryKeyRelatedField(queryset=CustomUser.objects.all())
     class Meta:
         model = Conversation
-        fields = ["id", "participants", "created_at"]
-        query_set = CustomUser.objects.all()
+        fields = ["conversation_id", "participants", "created_at"]
+
 
 class MessageSerializer(serializers.ModelSerializer):
-    sender_id = serializers.PrimaryKeyRelatedField(queryset=CustomUser.objects.all())
+    full_name = serializers.SerializerMethodField() 
+    
     class Meta:
         model = Message
-        fields = ("id", "sender_id", "message_body", "sent_at")
+        fields = ['message_id', 'sender_id', 'message_body', 'sent_at', 'full_name']
+    
+    def validate_message_body(self, value):
+        if not value.strip():
+            raise serializers.ValidationError("Message cannot be empty.")
+        if len(value) > 250:
+            raise serializers.ValidationError("Message too long. Max 250 characters.")
+        return value
+    
+    def get_full_name(self, obj):
+        return f"{obj.sender_id.first_name} {obj.sender_id.last_name}"
