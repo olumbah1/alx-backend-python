@@ -9,6 +9,7 @@ class CustomUser(AbstractUser):
     first_name = models.CharField(max_length=255, null=False, blank=False)
     last_name = models.CharField(max_length=255, null=False, blank=False)
     email = models.EmailField(unique=True, null=False, blank=False)
+    password_hash = models.CharField(max_length=255, blank=True, null=True)
     phone_number = models.CharField(max_length=20, null=True, blank=True)
     class Roles(models.TextChoices):
         GUEST = 'guest', 'Guest'
