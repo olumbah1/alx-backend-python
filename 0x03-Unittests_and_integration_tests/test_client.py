@@ -33,13 +33,14 @@ class TestGithubOrgClient(unittest.TestCase):
         and get_json is called with the correct URL.
         """
         expected_url = f"https://api.github.com/orgs/{org_name}"
-        mock_get_json.return_value = {"org": org_name}
+        test_payload = {"login": org_name, "id": 123456}
+        mock_get_json.return_value = test_payload
 
         client = GithubOrgClient(org_name)
         result = client.org
 
         mock_get_json.assert_called_once_with(expected_url)
-        self.assertEqual(result, {"org": org_name})
+        self.assertEqual(result, test_payload)
 
     @patch.object(GithubOrgClient, "org", new_callable=PropertyMock)
     def test_public_repos_url(self, mock_org):
@@ -62,9 +63,9 @@ class TestGithubOrgClient(unittest.TestCase):
         and that the necessary calls are made exactly once.
         """
         test_payload = [
-            {"name": "repo1"},
-            {"name": "repo2"},
-            {"name": "repo3"},
+            {"name": "repo1", "license": {"key": "apache-2.0"}},
+            {"name": "repo2", "license": {"key": "mit"}},
+            {"name": "repo3", "license": None},
         ]
         mock_get_json.return_value = test_payload
 
@@ -88,6 +89,7 @@ class TestGithubOrgClient(unittest.TestCase):
         [
             ({"license": {"key": "my_license"}}, "my_license", True),
             ({"license": {"key": "other_license"}}, "my_license", False),
+            ({"license": None}, "my_license", False),
         ]
     )
     def test_has_license(self, repo, license_key, expected):
@@ -124,7 +126,7 @@ class TestIntegrationGithubOrgClient(unittest.TestCase):
         # Set up .json() return values depending on the URL
         def side_effect(url):
             mock_response = Mock()
-            if url == "https://api.github.com/orgs/testorg":
+            if url == "https://api.github.com/orgs/google":
                 mock_response.json.return_value = cls.org_payload
             elif url == cls.org_payload["repos_url"]:
                 mock_response.json.return_value = cls.repos_payload
@@ -139,12 +141,16 @@ class TestIntegrationGithubOrgClient(unittest.TestCase):
 
     def test_public_repos(self):
         """Test that public_repos returns expected repo names."""
-        client = GithubOrgClient("testorg")
+        client = GithubOrgClient("google")
         self.assertEqual(client.public_repos(), self.expected_repos)
 
     def test_public_repos_with_license(self):
         """Test filtering repos by license."""
-        client = GithubOrgClient("testorg")
+        client = GithubOrgClient("google")
         self.assertEqual(
             client.public_repos(license="apache-2.0"), self.apache2_repos
         )
+
+
+if __name__ == '__main__':
+    unittest.main()
