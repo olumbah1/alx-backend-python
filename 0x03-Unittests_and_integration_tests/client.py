@@ -59,6 +59,7 @@ class GithubOrgClient:
         """
         Static method to check if repo has license
         """
-        if repo.get("license") is None:
+        license_info = repo.get("license")
+        if license_info is None:
             return False
-        return repo["license"]["key"] == license_key
+        return license_info.get("key") == license_key

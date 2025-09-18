@@ -88,6 +88,7 @@ class TestGithubOrgClient(unittest.TestCase):
         [
             ({"license": {"key": "my_license"}}, "my_license", True),
             ({"license": {"key": "other_license"}}, "my_license", False),
+            ({"license": None}, "my_license", False),
         ]
     )
     def test_has_license(self, repo, license_key, expected):
@@ -124,9 +125,9 @@ class TestIntegrationGithubOrgClient(unittest.TestCase):
             """Return appropriate mock response based on URL."""
             mock_response = Mock()
             
-            if url == "https://api.github.com/orgs/google":
+            if "orgs" in url and not url.endswith("/repos"):
                 mock_response.json.return_value = cls.org_payload
-            elif url == cls.org_payload["repos_url"]:
+            elif url.endswith("/repos") or "repos" in url:
                 mock_response.json.return_value = cls.repos_payload
             
             return mock_response
