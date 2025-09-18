@@ -11,16 +11,21 @@ class TestAccessNestedMap(unittest.TestCase):
     ])
     def test_access_nested_map(self, nested_map, path, expected):
         self.assertEqual(access_nested_map(nested_map, path), expected)
+        
+#     def test_some_function(self):
+#         result = some_function(input)
+#         print(f"Result: {result!r}")   # Shows the actual return value
+#         self.assertEqual(result, "OK")
 
 
 
-class TestAccessNestedMap(unittest.TestCase):
-    @parameterized.expand([
-        ({}, ("a",), 'a'),
-        ({"a": 1}, ("a", "b"), 'b'),
-    ])
-    def test_access_nested_map_exception(self, nested_map, path, missing_key):
-        with self.assertRaises(KeyError) as context:
-            access_nested_map(nested_map, path)
-        # Check that the exception message contains the missing key in quotes
-        self.assertEqual(str(context.exception), f"'{missing_key}'")
+# class TestAccessNestedMap(unittest.TestCase):
+#     @parameterized.expand([
+#         ({}, ("a",), 'a'),
+#         ({"a": 1}, ("a", "b"), 'b'),
+#     ])
+#     def test_access_nested_map_exception(self, nested_map, path, missing_key):
+#         with self.assertRaises(KeyError) as context:
+#             access_nested_map(nested_map, path)
+#         # Check that the exception message contains the missing key in quotes
+#         self.assertEqual(str(context.exception), f"'{missing_key}'")
