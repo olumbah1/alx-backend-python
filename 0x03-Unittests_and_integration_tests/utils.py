@@ -15,11 +15,27 @@ def access_nested_map(nested_map, path):
     """
     # for key in path:
     #     nested_map = nested_map[key]
-    # return nested_map
+#     # return nested_map
 
-def access_nested_map(nested_map, path):
-    for key in path:
-        if not isinstance(nested_map, dict):
-            raise KeyError(key)
-        nested_map = nested_map[key]
-    return nested_map
+# def access_nested_map(nested_map, path):
+#     for key in path:
+#         if not isinstance(nested_map, dict):
+#             raise KeyError(key)
+#         nested_map = nested_map[key]
+#     return nested_map
+
+#!/usr/bin/env python3
+import requests
+
+def get_json(url):
+    """
+    Fetch JSON data from a given URL.
+
+    Args:
+        url (str): The URL to send a GET request to.
+
+    Returns:
+        dict: The JSON response from the URL.
+    """
+    response = requests.get(url)
+    return response.json()
