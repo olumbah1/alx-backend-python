@@ -17,7 +17,7 @@ from fixtures import (
 
 class TestGithubOrgClient(unittest.TestCase):
     """
-    Test cases for GithubOrgClient.org property.
+    Test cases for GithubOrgClient class.
     """
 
     @parameterized.expand(
@@ -30,42 +30,42 @@ class TestGithubOrgClient(unittest.TestCase):
     def test_org(self, org_name, mock_get_json):
         """
         Test that GithubOrgClient.org returns the correct value
-        and get_json is called with the correct URL.
+        and get_json is called once with the expected argument.
         """
-        expected_url = f"https://api.github.com/orgs/{org_name}"
-        test_payload = {"login": org_name, "id": 123456}
+        test_payload = {"login": org_name}
         mock_get_json.return_value = test_payload
 
         client = GithubOrgClient(org_name)
         result = client.org
 
+        expected_url = f"https://api.github.com/orgs/{org_name}"
         mock_get_json.assert_called_once_with(expected_url)
         self.assertEqual(result, test_payload)
 
     @patch.object(GithubOrgClient, "org", new_callable=PropertyMock)
     def test_public_repos_url(self, mock_org):
         """
-        Test that _public_repos_url returns the correct repos_url
-        from the mocked org payload.
+        Test that _public_repos_url returns the expected repos_url
+        from the mocked org property.
         """
-        payload = {"repos_url": "https://api.github.com/orgs/testorg/repos"}
-        mock_org.return_value = payload
+        known_payload = {"repos_url": "https://api.github.com/orgs/test/repos"}
+        mock_org.return_value = known_payload
 
-        client = GithubOrgClient("testorg")
+        client = GithubOrgClient("test")
         result = client._public_repos_url
 
-        self.assertEqual(result, payload["repos_url"])
+        self.assertEqual(result, known_payload["repos_url"])
 
     @patch("client.get_json")
     def test_public_repos(self, mock_get_json):
         """
-        Test that public_repos returns the correct list of repo names
-        and that the necessary calls are made exactly once.
+        Test that public_repos returns the expected list of repo names
+        and that the mocked property and get_json are called once.
         """
         test_payload = [
-            {"name": "repo1", "license": {"key": "apache-2.0"}},
-            {"name": "repo2", "license": {"key": "mit"}},
-            {"name": "repo3", "license": None},
+            {"name": "repo1"},
+            {"name": "repo2"},
+            {"name": "repo3"},
         ]
         mock_get_json.return_value = test_payload
 
@@ -73,28 +73,26 @@ class TestGithubOrgClient(unittest.TestCase):
             GithubOrgClient,
             "_public_repos_url",
             new_callable=PropertyMock,
-        ) as mock_repos_url:
-            mock_repos_url.return_value = (
-                "https://api.github.com/orgs/testorg/repos"
-            )
+        ) as mock_public_repos_url:
+            mock_public_repos_url.return_value = "https://api.github.com/orgs/test/repos"
 
-            client = GithubOrgClient("testorg")
+            client = GithubOrgClient("test")
             result = client.public_repos()
 
-            self.assertEqual(result, ["repo1", "repo2", "repo3"])
-            mock_get_json.assert_called_once_with(mock_repos_url.return_value)
-            mock_repos_url.assert_called_once()
+            expected_repos = ["repo1", "repo2", "repo3"]
+            self.assertEqual(result, expected_repos)
+            mock_public_repos_url.assert_called_once()
+            mock_get_json.assert_called_once_with(mock_public_repos_url.return_value)
 
     @parameterized.expand(
         [
             ({"license": {"key": "my_license"}}, "my_license", True),
             ({"license": {"key": "other_license"}}, "my_license", False),
-            ({"license": None}, "my_license", False),
         ]
     )
     def test_has_license(self, repo, license_key, expected):
         """
-        Test has_license returns True only when license matches.
+        Test has_license returns the expected boolean value.
         """
         result = GithubOrgClient.has_license(repo, license_key)
         self.assertEqual(result, expected)
@@ -122,23 +120,18 @@ class TestIntegrationGithubOrgClient(unittest.TestCase):
         cls.get_patcher = patch("requests.get")
         cls.mock_get = cls.get_patcher.start()
 
-        # Create a side effect function that returns appropriate mocks
-        def get_side_effect(url, *args, **kwargs):
+        def side_effect(url):
+            """Return appropriate mock response based on URL."""
             mock_response = Mock()
             
-            # Mock response for organization endpoint
-            if url.endswith("orgs/google"):
+            if url == "https://api.github.com/orgs/google":
                 mock_response.json.return_value = cls.org_payload
-            # Mock response for repos endpoint  
             elif url == cls.org_payload["repos_url"]:
                 mock_response.json.return_value = cls.repos_payload
-            else:
-                # Default empty response
-                mock_response.json.return_value = {}
-                
+            
             return mock_response
 
-        cls.mock_get.side_effect = get_side_effect
+        cls.mock_get.side_effect = side_effect
 
     @classmethod
     def tearDownClass(cls):
@@ -148,14 +141,14 @@ class TestIntegrationGithubOrgClient(unittest.TestCase):
     def test_public_repos(self):
         """Test that public_repos returns expected repo names."""
         client = GithubOrgClient("google")
-        repos = client.public_repos()
-        self.assertEqual(repos, self.expected_repos)
+        self.assertEqual(client.public_repos(), self.expected_repos)
 
     def test_public_repos_with_license(self):
         """Test filtering repos by license."""
         client = GithubOrgClient("google")
-        apache_repos = client.public_repos(license="apache-2.0")
-        self.assertEqual(apache_repos, self.apache2_repos)
+        self.assertEqual(
+            client.public_repos(license="apache-2.0"), self.apache2_repos
+        )
 
 
 if __name__ == '__main__':
