@@ -127,7 +127,7 @@ class TestIntegrationGithubOrgClient(unittest.TestCase):
         # Set up .json() return values depending on the URL
         def side_effect(url):
             mock_response = Mock()
-            if url == "https://api.github.com/orgs/google":
+            if "orgs/" in url:
                 mock_response.json.return_value = cls.org_payload
             elif url == cls.org_payload["repos_url"]:
                 mock_response.json.return_value = cls.repos_payload

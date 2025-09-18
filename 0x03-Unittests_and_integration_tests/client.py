@@ -3,22 +3,6 @@
 A github org client
 """
 import requests
-from functools import wraps
-
-
-def memoize(fn):
-    """
-    Decorator to memoize method
-    """
-    attr_name = '_cache_' + fn.__name__
-
-    @wraps(fn)
-    def memoized(self):
-        """"memoized wraps"""
-        if not hasattr(self, attr_name):
-            setattr(self, attr_name, fn(self))
-        return getattr(self, attr_name)
-    return memoized
 
 
 def get_json(url):
@@ -40,13 +24,16 @@ class GithubOrgClient:
         Init method of GithubOrgClient
         """
         self._org_name = org_name
+        self._org = None
 
-    @memoize
+    @property
     def org(self):
         """
-        Memoize org
+        Property to get org info
         """
-        return get_json(self.ORG_URL.format(org=self._org_name))
+        if self._org is None:
+            self._org = get_json(self.ORG_URL.format(org=self._org_name))
+        return self._org
 
     @property
     def _public_repos_url(self):
@@ -72,7 +59,6 @@ class GithubOrgClient:
         """
         Static method to check if repo has license
         """
-        assert license_key is not None, "license_key cannot be None"
-        if repo["license"] is None:
+        if repo.get("license") is None:
             return False
         return repo["license"]["key"] == license_key
