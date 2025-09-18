@@ -52,8 +52,6 @@ from utils import memoize
 #         # Check that the result equals the test_payload
 #         self.assertEqual(result, test_payload)
 
-
-
 class TestMemoize(unittest.TestCase):
     def test_memoize(self):
         class TestClass:
@@ -69,9 +67,7 @@ class TestMemoize(unittest.TestCase):
             result1 = obj.a_property
             result2 = obj.a_property
 
-            # Assert that result is correct
             self.assertEqual(result1, 42)
             self.assertEqual(result2, 42)
 
-            # Assert that a_method was called only once due to memoization
             mock_method.assert_called_once()
