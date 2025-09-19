@@ -98,12 +98,14 @@ class TestGithubOrgClient(unittest.TestCase):
         self.assertEqual(result, expected)
 
 
-@parameterized_class([{
-    "org_payload": org_payload,
-    "repos_payload": repos_payload,
-    "expected_repos": expected_repos,
-    "apache2_repos": apache2_repos,
-}])
+@parameterized_class([
+    {
+        'org_payload': org_payload,
+        'repos_payload': repos_payload,
+        'expected_repos': expected_repos,
+        'apache2_repos': apache2_repos,
+    },
+])
 class TestIntegrationGithubOrgClient(unittest.TestCase):
     """
     Integration tests for GithubOrgClient.public_repos
@@ -113,19 +115,18 @@ class TestIntegrationGithubOrgClient(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """Start patching requests.get with expected side effects."""
-        cls.get_patcher = patch("requests.get")
+        route_payload = {
+            'https://api.github.com/orgs/google': cls.org_payload,
+            'https://api.github.com/orgs/google/repos': cls.repos_payload,
+        }
 
-        mock_get = cls.get_patcher.start()
+        def get_payload(url):
+            if url in route_payload:
+                return Mock(**{'json.return_value': route_payload[url]})
+            return Mock()
 
-        def side_effect(url):
-            mock_response = Mock()
-            if url == "https://api.github.com/orgs/google":
-                mock_response.json.return_value = cls.org_payload
-            elif url == cls.org_payload["repos_url"]:
-                mock_response.json.return_value = cls.repos_payload
-            return mock_response
-
-        mock_get.side_effect = side_effect
+        cls.get_patcher = patch("requests.get", side_effect=get_payload)
+        cls.get_patcher.start()
 
     @classmethod
     def tearDownClass(cls):
@@ -143,10 +144,3 @@ class TestIntegrationGithubOrgClient(unittest.TestCase):
         self.assertEqual(
             client.public_repos(license="apache-2.0"), self.apache2_repos
         )
-
-
-# Ensure the parameterized class has the fixtures as attributes
-TestIntegrationGithubOrgClient.org_payload = org_payload
-TestIntegrationGithubOrgClient.repos_payload = repos_payload
-TestIntegrationGithubOrgClient.expected_repos = expected_repos
-TestIntegrationGithubOrgClient.apache2_repos = apache2_repos
