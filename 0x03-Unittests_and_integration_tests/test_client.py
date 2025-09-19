@@ -98,15 +98,21 @@ class TestGithubOrgClient(unittest.TestCase):
         self.assertEqual(result, expected)
 
 
-# Create the class with manual attributes first
-class TestIntegrationGithubOrgClientBase(unittest.TestCase):
-    """Base class for integration tests."""
-    
-    # Set class attributes from fixtures
-    org_payload = org_payload
-    repos_payload = repos_payload
-    expected_repos = expected_repos
-    apache2_repos = apache2_repos
+@parameterized_class(
+    [
+        {
+            "org_payload": org_payload,
+            "repos_payload": repos_payload,
+            "expected_repos": expected_repos,
+            "apache2_repos": apache2_repos,
+        }
+    ]
+)
+class TestIntegrationGithubOrgClient(unittest.TestCase):
+    """
+    Integration tests for GithubOrgClient.public_repos
+    using real method calls and mocked external requests.
+    """
 
     @classmethod
     def setUpClass(cls):
@@ -143,20 +149,8 @@ class TestIntegrationGithubOrgClientBase(unittest.TestCase):
         )
 
 
-# Apply the decorator for the checker
-@parameterized_class(
-    [
-        {
-            "org_payload": org_payload,
-            "repos_payload": repos_payload,
-            "expected_repos": expected_repos,
-            "apache2_repos": apache2_repos,
-        }
-    ]
-)
-class TestIntegrationGithubOrgClient(TestIntegrationGithubOrgClientBase):
-    """
-    Integration tests for GithubOrgClient.public_repos
-    using real method calls and mocked external requests.
-    """
-    pass
+# Ensure the parameterized class has the fixtures as attributes
+TestIntegrationGithubOrgClient.org_payload = org_payload
+TestIntegrationGithubOrgClient.repos_payload = repos_payload
+TestIntegrationGithubOrgClient.expected_repos = expected_repos
+TestIntegrationGithubOrgClient.apache2_repos = apache2_repos
