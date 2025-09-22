@@ -1,12 +1,12 @@
 from rest_framework import viewsets, permissions
-from .permissions import IsOwner
+from .permissions import IsOwner, IsParticipantOfConversation
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from rest_framework import status
 from django_filters.rest_framework import DjangoFilterBackend
 from .models import CustomUser, Conversation, Message
 from .serializers import CustomUserSerializer, ConversationSerializer, MessageSerializer
-
+from rest_framework.exceptions import PermissionDenied
 
 class CustomUserViewSet(viewsets.ModelViewSet):
     queryset = CustomUser.objects.all()
@@ -17,14 +17,20 @@ class CustomUserViewSet(viewsets.ModelViewSet):
 class ConversationViewSet(viewsets.ModelViewSet):
     queryset = Conversation.objects.all()
     serializer_class = ConversationSerializer
-    permission_classes = [permissions.IsAuthenticated, IsOwner]
+    permission_classes = [IsParticipantOfConversation]
 
     def perform_create(self, serializer):
-        serializer.save()
-        
+        conversation = serializer.save()
+        if self.request.user not in conversation.participants.all():
+            conversation.participants.add(self.request.user)
+
     @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])
     def send_message(self, request, pk=None):
         conversation = self.get_object()
+
+        if request.user not in conversation.participants.all():
+           raise PermissionDenied("You are not a participant of this conversation.")
+
         data = request.data.copy()
         data['sender_id'] = request.user.id
         data['conversation'] = conversation.id 
@@ -40,7 +46,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
 class MessageViewSet(viewsets.ModelViewSet):
     queryset = Message.objects.all()
     serializer_class = MessageSerializer
-    permission_classes = [permissions.IsAuthenticated, IsOwner]
+    permission_classes = [IsParticipantOfConversation]
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['conversation', 'sender']
     
