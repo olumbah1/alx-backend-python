@@ -8,7 +8,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from .models import CustomUser, Conversation, Message
 from .serializers import CustomUserSerializer, ConversationSerializer, MessageSerializer
 from .permissions import IsParticipantOfConversation
-
+from .filters import MessageFilter
 
 class CustomUserViewSet(viewsets.ModelViewSet):
     queryset = CustomUser.objects.all()
@@ -52,9 +52,10 @@ class MessageViewSet(viewsets.ModelViewSet):
     serializer_class = MessageSerializer
     permission_classes = [IsParticipantOfConversation]
     filter_backends = [DjangoFilterBackend]
-    filterset_fields = ['conversation', 'sender']
-    
+    filterset_class = MessageFilter
+
     def get_queryset(self):
         user = self.request.user
         return Message.objects.filter(conversation__participants=user)
+
 
