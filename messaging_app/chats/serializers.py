@@ -1,5 +1,8 @@
 from rest_framework import serializers
 from .models import CustomUser, Conversation, Message
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
+from rest_framework.exceptions import ValidationError as DRFValidationError
 
 
 class CustomUserSerializer(serializers.ModelSerializer):
@@ -13,6 +16,11 @@ class CustomUserSerializer(serializers.ModelSerializer):
         
     def create(self, validated_data):
         password = validated_data.pop("password")
+        try:
+            validate_password(password)
+        except DjangoValidationError as e:
+            raise DRFValidationError ({"password":list(e.messages)})
+        
         user = CustomUser(**validated_data)
         user.set_password(password)
         user.save()
