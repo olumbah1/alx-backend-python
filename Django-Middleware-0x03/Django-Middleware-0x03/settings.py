@@ -43,6 +43,9 @@ INSTALLED_APPS = [
     'django_filters',
     'rest_framework_simplejwt',
 ]
+# settings.py
+
+# ... other settings ...
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -52,10 +55,13 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'middleware.RequestLoggingMiddleware',
-    'middleware.RestrictAccessByTimeMiddleware', 
+    
+    # Add your custom middleware here
+    'middleware.RequestLoggingMiddleware',        # Logs all requests
+    'middleware.RestrictAccessByTimeMiddleware',  # Restricts access by time
 ]
 
+# ... rest of your settings ...
 
 LOGGING = {
     'version': 1,
