@@ -4,7 +4,7 @@
 | Login  | `POST` | `http://localhost:8000/api/auth/login/`| None (public) | `{ "username": "user", "password": "..." }`                      |
 | Logout            | `POST`     | `http://localhost:8000/api/auth/logout/`         | `Authorization: Token <token>` |                                                       |
 
-
+| **Action**  | **Method** | **URL**  | **Headers**  | **Body (JSON)** |
 
 | List Conversations  | `GET` | `http://localhost:8000/api/conversations/` | `Authorization: Token <token>` | *None*                                  |
 | Create Conversation | `POST` | `http://localhost:8000/api/conversations/` | `Authorization: Token <token>` | `{ "participants": [1, 2] }` (user IDs) |
@@ -14,6 +14,7 @@
 | Send Message (Custom Action) | `POST` | `http://localhost:8000/api/conversations/<id>/send_message/` | `Authorization: Token <token>` | `{ "text": "Hello!" }` |
 | Get Conversation Messages    | `GET`      | `http://localhost:8000/api/conversations/<id>/messages/`     | `Authorization: Token <token>` | *None* |
 
+| **Action**  | **Method** | **URL**  | **Headers**  | **Body (JSON)** |
 
 | List Messages  | `GET` | `http://localhost:8000/api/messages/` | `Authorization: Token <token>` | *None*  |
 | Create Message | `POST`| `http://localhost:8000/api/messages/` | `Authorization: Token <token>` | `{ "conversation": 1, "text": "Hey", "sender": <your_user_id> }` |
