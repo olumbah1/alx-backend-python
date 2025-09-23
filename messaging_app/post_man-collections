@@ -1,0 +1,23 @@
+| **Action**  | **Method** | **URL**  | **Headers**  | **Body (JSON)** |
+
+| Register| `POST` | `http://localhost:8000/api/auth/register/` | None (public) | `{ "username": "user", "email": "...", "password": "...", ... }` |
+| Login  | `POST` | `http://localhost:8000/api/auth/login/`| None (public) | `{ "username": "user", "password": "..." }`                      |
+| Logout            | `POST`     | `http://localhost:8000/api/auth/logout/`         | `Authorization: Token <token>` |                                                       |
+
+
+
+| List Conversations  | `GET` | `http://localhost:8000/api/conversations/` | `Authorization: Token <token>` | *None*                                  |
+| Create Conversation | `POST` | `http://localhost:8000/api/conversations/` | `Authorization: Token <token>` | `{ "participants": [1, 2] }` (user IDs) |
+| Get One Conversation | `GET` | `http://localhost:8000/api/conversations/<id>/` | `Authorization: Token <token>` | *None* |
+| Update Conversation | `PATCH` | `http://localhost:8000/api/conversations/<id>/` | `Authorization: Token <token>` | `{ "participants": [1, 2, 3] }` |
+| Delete Conversation | `DELETE`| `http://localhost:8000/api/conversations/<id>/` | `Authorization: Token <token>` | *None* |
+| Send Message (Custom Action) | `POST` | `http://localhost:8000/api/conversations/<id>/send_message/` | `Authorization: Token <token>` | `{ "text": "Hello!" }` |
+| Get Conversation Messages    | `GET`      | `http://localhost:8000/api/conversations/<id>/messages/`     | `Authorization: Token <token>` | *None* |
+
+
+| List Messages  | `GET` | `http://localhost:8000/api/messages/` | `Authorization: Token <token>` | *None*  |
+| Create Message | `POST`| `http://localhost:8000/api/messages/` | `Authorization: Token <token>` | `{ "conversation": 1, "text": "Hey", "sender": <your_user_id> }` |
+| Get Message    | `GET` | `http://localhost:8000/api/messages/<id>/` | `Authorization: Token <token>` | *None*  |
+| Update Message | `PATCH` | `http://localhost:8000/api/messages/<id>/` | `Authorization: Token <token>` | `{ "text": "Updated message" }` |
+| Delete Message | `DELETE` | `http://localhost:8000/api/messages/<id>/` | `Authorization: Token <token>` | *None* |
+

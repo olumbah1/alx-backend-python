@@ -1,4 +1,6 @@
+import os
 import uuid
+import binascii
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.conf import settings
@@ -34,9 +36,32 @@ class Conversation(models.Model):
     
 class Message(models.Model):
     message_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    sender_id = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='sent_messages')
+    sender = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='sent_messages')
+    conversation = models.ForeignKey('Conversation', on_delete=models.CASCADE, related_name='messages')
     message_body = models.TextField(null=False)
     sent_at = models.DateTimeField(auto_now_add=True)
     
     def __str__(self):
         return f"From {self.sender_id.email} at {self.sent_at}: {self.message_body[:30]}"
+
+
+class CustomJWT(models.Model):
+    key = models.CharField(max_length=40, primary_key=True)
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        related_name='auth_token',
+        on_delete=models.CASCADE
+    )
+    created = models.DateTimeField(auto_now_add=True)
+
+    def save(self, *args, **kwargs):
+        if not self.key:
+            self.key = self.generate_key()
+        return super().save(*args, **kwargs)
+
+    @classmethod
+    def generate_key(cls):
+        return binascii.hexlify(os.urandom(20)).decode()
+
+    def __str__(self):
+        return self.key
