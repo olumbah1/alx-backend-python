@@ -43,9 +43,7 @@ INSTALLED_APPS = [
     'django_filters',
     'rest_framework_simplejwt',
 ]
-# settings.py
 
-# ... other settings ...
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -55,10 +53,11 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'chats.middleware.RequestLoggingMiddleware',       
-    'chats.middleware.RestrictAccessByTimeMiddleware',
+    
+    
+    'middleware.RequestLoggingMiddleware',        
+    'middleware.RestrictAccessByTimeMiddleware',  
 ]
-
 
 
 LOGGING = {
@@ -81,7 +80,7 @@ LOGGING = {
 }
 
 
-ROOT_URLCONF = 'Django-Middleware-0x03.urls'
+ROOT_URLCONF = 'messaging_app.urls'
 
 TEMPLATES = [
     {
@@ -98,7 +97,7 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = 'Django-Middleware-0x03.wsgi.application'
+WSGI_APPLICATION = 'messaging_app.wsgi.application'
 
 AUTH_USER_MODEL = 'chats.CustomUser'
 

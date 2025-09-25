@@ -1,0 +1,56 @@
+{
+  "id": "messaging-app-env",
+  "name": "Messaging App Environment",
+  "values": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000/api",
+      "description": "Base URL for the messaging app API",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "jwt_token",
+      "value": "",
+      "description": "JWT authentication token (auto-populated after login)",
+      "type": "secret",
+      "enabled": true
+    },
+    {
+      "key": "user_id",
+      "value": "",
+      "description": "Current user ID (auto-populated after registration/login)",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "conversation_id",
+      "value": "",
+      "description": "Current conversation ID (auto-populated after creation)",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "message_id",
+      "value": "",
+      "description": "Current message ID (auto-populated after sending)",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "test_username",
+      "value": "testuser",
+      "description": "Username for testing",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "test_password",
+      "value": "securepassword123",
+      "description": "Password for testing",
+      "type": "secret",
+      "enabled": true
+    }
+  ],
+  "_postman_variable_scope": "environment"
+}

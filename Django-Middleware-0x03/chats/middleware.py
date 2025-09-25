@@ -1,8 +1,10 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 from django.conf import settings
-from django.http import HttpResponseForbidden
+from django.http import HttpResponseForbidden, JsonResponse
+from collections import defaultdict
+import threading
 
 def setup_request_logger():
     """Setup the request logger with file handler."""
@@ -126,5 +128,145 @@ class RestrictAccessByTimeMiddleware:
             return HttpResponseForbidden(forbidden_message)
         
         # If within allowed hours, continue processing the request
+        response = self.get_response(request)
+        return response
+
+
+class OffensiveLanguageMiddleware:
+    """
+    Middleware that limits the number of chat messages a user can send within 
+    a certain time window, based on their IP address.
+    
+    Rate limit: 5 messages per minute per IP address
+    """
+    
+    def __init__(self, get_response):
+        """
+        Initialize the middleware.
+        
+        Args:
+            get_response: The next middleware or view in the chain
+        """
+        self.get_response = get_response
+        # Dictionary to store message timestamps for each IP address
+        # Format: {ip_address: [timestamp1, timestamp2, ...]}
+        self.ip_message_history = defaultdict(list)
+        # Thread lock for thread-safe access to the message history
+        self.lock = threading.Lock()
+        # Rate limiting configuration
+        self.max_messages = 5  # Maximum messages allowed
+        self.time_window = 60  # Time window in seconds (1 minute)
+
+    def get_client_ip(self, request):
+        """
+        Get the client's IP address from the request.
+        
+        Args:
+            request: The HTTP request object
+            
+        Returns:
+            str: The client's IP address
+        """
+        # Check for IP in forwarded headers (for reverse proxies/load balancers)
+        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+        if x_forwarded_for:
+            # X-Forwarded-For can contain multiple IPs, get the first one
+            ip = x_forwarded_for.split(',')[0].strip()
+        else:
+            # Get IP from REMOTE_ADDR
+            ip = request.META.get('REMOTE_ADDR')
+        return ip
+
+    def clean_old_messages(self, ip_address, current_time):
+        """
+        Remove message timestamps that are outside the time window.
+        
+        Args:
+            ip_address: The IP address to clean
+            current_time: Current timestamp
+        """
+        cutoff_time = current_time - timedelta(seconds=self.time_window)
+        # Keep only messages within the time window
+        self.ip_message_history[ip_address] = [
+            timestamp for timestamp in self.ip_message_history[ip_address]
+            if timestamp > cutoff_time
+        ]
+
+    def is_rate_limited(self, ip_address):
+        """
+        Check if the IP address has exceeded the rate limit.
+        
+        Args:
+            ip_address: The IP address to check
+            
+        Returns:
+            bool: True if rate limited, False otherwise
+        """
+        current_time = datetime.now()
+        
+        with self.lock:
+            # Clean old message timestamps
+            self.clean_old_messages(ip_address, current_time)
+            
+            # Check if the IP has exceeded the limit
+            message_count = len(self.ip_message_history[ip_address])
+            
+            if message_count >= self.max_messages:
+                return True
+            
+            # Add current timestamp to the history
+            self.ip_message_history[ip_address].append(current_time)
+            return False
+
+    def __call__(self, request):
+        """
+        Process the request and apply rate limiting for POST requests (messages).
+        
+        Args:
+            request: The HTTP request object
+            
+        Returns:
+            HttpResponse: Either the blocked response or the normal response
+        """
+        # Only apply rate limiting to POST requests (chat messages)
+        if request.method == 'POST':
+            # Get the client's IP address
+            client_ip = self.get_client_ip(request)
+            
+            # Check if this IP is rate limited
+            if self.is_rate_limited(client_ip):
+                # Create rate limit response
+                error_message = {
+                    'error': 'Rate limit exceeded',
+                    'message': f'You can only send {self.max_messages} messages per minute. Please wait before sending another message.',
+                    'retry_after': self.time_window
+                }
+                
+                # Return JSON response for API calls or HTML for regular requests
+                if request.content_type == 'application/json' or 'api' in request.path:
+                    response = JsonResponse(error_message, status=429)
+                    response['Retry-After'] = str(self.time_window)
+                    return response
+                else:
+                    # HTML response for regular form submissions
+                    html_message = f"""
+                    <html>
+                        <head><title>Rate Limit Exceeded</title></head>
+                        <body>
+                            <h1>429 - Rate Limit Exceeded</h1>
+                            <p><strong>You are sending messages too quickly!</strong></p>
+                            <p>You can only send {self.max_messages} messages per minute.</p>
+                            <p>Please wait before sending another message.</p>
+                            <p>Your IP: {client_ip}</p>
+                            <p><a href="javascript:history.back()">Go Back</a></p>
+                        </body>
+                    </html>
+                    """
+                    response = HttpResponseForbidden(html_message)
+                    response.status_code = 429  # Too Many Requests
+                    response['Retry-After'] = str(self.time_window)
+                    return response
+        
+        # Continue processing the request if not rate limited
         response = self.get_response(request)
         return response
