@@ -270,3 +270,166 @@ class OffensiveLanguageMiddleware:
         # Continue processing the request if not rate limited
         response = self.get_response(request)
         return response
+
+class RolepermissionMiddleware:
+    """
+    Middleware that checks the user's role before allowing access to specific actions.
+    Only allows admin and moderator users to access certain protected paths.
+    """
+    
+    def __init__(self, get_response):
+        """
+        Initialize the middleware.
+        
+        Args:
+            get_response: The next middleware or view in the chain
+        """
+        self.get_response = get_response
+        
+        # Define protected paths that require admin/moderator access
+        self.protected_paths = [
+            '/admin/',
+            '/manage/',
+            '/moderate/',
+            '/delete/',
+            '/ban/',
+            '/settings/',
+            '/users/',
+            '/reports/',
+            '/dashboard/',
+        ]
+        
+        # Define allowed roles
+        self.allowed_roles = ['admin', 'moderator']
+
+    def get_user_role(self, user):
+        """
+        Get the user's role from various possible sources.
+        
+        Args:
+            user: Django User object
+            
+        Returns:
+            str: The user's role or None if no role found
+        """
+        if not user.is_authenticated:
+            return None
+            
+        # Method 1: Check if user is superuser (Django built-in admin)
+        if user.is_superuser:
+            return 'admin'
+            
+        # Method 2: Check if user is staff (Django built-in staff)
+        if user.is_staff:
+            return 'moderator'
+            
+        # Method 3: Check for custom role field on User model
+        if hasattr(user, 'role'):
+            return getattr(user, 'role', None)
+            
+        # Method 4: Check for role in user profile
+        if hasattr(user, 'profile') and hasattr(user.profile, 'role'):
+            return getattr(user.profile, 'role', None)
+            
+        # Method 5: Check for role through groups
+        user_groups = user.groups.values_list('name', flat=True)
+        for group_name in user_groups:
+            group_lower = group_name.lower()
+            if group_lower in ['admin', 'administrator']:
+                return 'admin'
+            elif group_lower in ['moderator', 'mod']:
+                return 'moderator'
+                
+        # Method 6: Check for custom role through related model
+        if hasattr(user, 'userrole'):
+            return getattr(user.userrole, 'role', None)
+            
+        return None
+
+    def requires_role_check(self, path):
+        """
+        Check if the requested path requires role verification.
+        
+        Args:
+            path: The request path
+            
+        Returns:
+            bool: True if path requires role check, False otherwise
+        """
+        # Check if the path starts with any of the protected paths
+        return any(path.startswith(protected_path) for protected_path in self.protected_paths)
+
+    def __call__(self, request):
+        """
+        Process the request and check user role for protected paths.
+        
+        Args:
+            request: The HTTP request object
+            
+        Returns:
+            HttpResponse: Either access denied response or the normal response
+        """
+        # Check if this path requires role verification
+        if self.requires_role_check(request.path):
+            
+            # Check if user is authenticated
+            if not hasattr(request, 'user') or not request.user.is_authenticated:
+                # User not authenticated - redirect to login or return 401
+                forbidden_message = """
+                <html>
+                    <head><title>Authentication Required</title></head>
+                    <body>
+                        <h1>401 - Authentication Required</h1>
+                        <p>You must be logged in to access this resource.</p>
+                        <p>Please <a href="/login/">log in</a> to continue.</p>
+                    </body>
+                </html>
+                """
+                response = HttpResponseForbidden(forbidden_message)
+                response.status_code = 401  # Unauthorized
+                return response
+            
+            # Get user's role
+            user_role = self.get_user_role(request.user)
+            
+            # Check if user has required role
+            if user_role not in self.allowed_roles:
+                # User doesn't have required role - return 403
+                user_info = f"User: {request.user.username}" if request.user.is_authenticated else "Anonymous User"
+                role_info = f"Role: {user_role}" if user_role else "Role: None"
+                
+                forbidden_message = f"""
+                <html>
+                    <head><title>Access Denied - Insufficient Permissions</title></head>
+                    <body>
+                        <h1>403 - Access Forbidden</h1>
+                        <p><strong>You do not have permission to access this resource.</strong></p>
+                        <p>This action requires admin or moderator privileges.</p>
+                        <hr>
+                        <p><strong>Your Information:</strong></p>
+                        <p>{user_info}</p>
+                        <p>{role_info}</p>
+                        <p>Required roles: Admin or Moderator</p>
+                        <hr>
+                        <p>If you believe this is an error, please contact your system administrator.</p>
+                        <p><a href="javascript:history.back()">Go Back</a> | <a href="/">Home</a></p>
+                    </body>
+                </html>
+                """
+                
+                # For API requests, return JSON response
+                if request.content_type == 'application/json' or 'api' in request.path:
+                    error_response = {
+                        'error': 'Access Denied',
+                        'message': 'You do not have permission to access this resource.',
+                        'required_roles': self.allowed_roles,
+                        'your_role': user_role,
+                        'user': request.user.username if request.user.is_authenticated else None
+                    }
+                    return JsonResponse(error_response, status=403)
+                
+                return HttpResponseForbidden(forbidden_message)
+        
+        # Continue processing the request if role check passed or not required
+        response = self.get_response(request)
+        return response
