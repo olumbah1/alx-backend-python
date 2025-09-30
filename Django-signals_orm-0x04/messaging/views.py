@@ -1,250 +1,326 @@
-from rest_framework import viewsets, permissions, status
-from rest_framework.decorators import action
-from rest_framework.response import Response
-from rest_framework.exceptions import PermissionDenied
-from .models import CustomJWT  # Your custom JWT model
-from rest_framework.authtoken.views import ObtainAuthToken
-from rest_framework.views import APIView
-from django.contrib.auth import authenticate, login
-from django_filters.rest_framework import DjangoFilterBackend
-from .permissions import IsParticipantOfConversation
-from .filters import MessageFilter
-from .models import CustomUser, Conversation, Message
-from .serializers import (
-    CustomUserSerializer, 
-    ConversationSerializer,
-    MessageSerializer, 
-    CustomUserRegisterSerializer,
-    CustomUserLoginSerializer
-)
+from django.shortcuts import render, redirect
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth import logout
+from django.contrib import messages
+from django.contrib.auth.models import User
+from django.views.decorators.http import require_http_methods
+from django.http import JsonResponse
+from .models import Message, Notification, MessageHistory
 
 
-class CustomUserViewSet(viewsets.ModelViewSet):
+@login_required
+@require_http_methods(["GET", "POST"])
+def delete_user(request):
     """
-    ViewSet for managing users - handles CRUD operations
-    """
-    queryset = CustomUser.objects.all()
-    serializer_class = CustomUserSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    View to handle user account deletion.
     
-    def get_permissions(self):
-        """
-        Allow registration without authentication, but require auth for other actions
-        """
-        if self.action == 'create':
-            permission_classes = [permissions.AllowAny]
-        else:
-            permission_classes = [permissions.IsAuthenticated]
-        return [permission() for permission in permission_classes]
+    GET: Display confirmation page
+    POST: Delete the user account
     
-    def get_serializer_class(self):
-        """
-        Use registration serializer for user creation
-        """
-        if self.action == 'create':
-            return CustomUserRegisterSerializer
-        return CustomUserSerializer
-    
-    def create(self, request, *args, **kwargs):
-        """
-        Handle user registration
-        """
-        serializer = self.get_serializer(data=request.data)
-        if serializer.is_valid():
-            user = serializer.save()
-            
-            # Create token for new user
-            token, created = CustomJWT.objects.get_or_create(user=user)
-            
-            return Response({
-                'message': 'User created successfully',
-                'user': {
-                    'id': user.user_id,
-                    'username': user.username,
-                    'email': user.email,
-                    'first_name': user.first_name,
-                    'last_name': user.last_name,
-                },
-                'token': token.key
-            }, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
-    @action(detail=False, methods=['get'], permission_classes=[permissions.IsAuthenticated])
-    def profile(self, request):
-        """
-        Get current user's profile
-        """
-        serializer = self.get_serializer(request.user)
-        return Response(serializer.data)
-    
-    @action(detail=False, methods=['put', 'patch'], permission_classes=[permissions.IsAuthenticated])
-    def update_profile(self, request):
-        """
-        Update current user's profile
-        """
-        serializer = self.get_serializer(request.user, data=request.data, partial=True)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
-class RegisterView(APIView):
-    permission_classes = [permissions.AllowAny]
-
-    def post(self, request):
-        serializer = CustomUserRegisterSerializer(data=request.data)
-        if serializer.is_valid():
-            user = serializer.save()
-            token, created = CustomJWT.objects.get_or_create(user=user)
-            return Response({
-                'message': 'User registered successfully',
-                'user': {
-                    'id': user.user_id,
-                    'username': user.username,
-                    'email': user.email,
-                    'first_name': user.first_name,
-                    'last_name': user.last_name,
-                },
-                'token': token.key
-            }, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-class CustomAuthToken(ObtainAuthToken):
-    """
-    Custom authentication view that returns user data with token
-    """
-    serializer_class = CustomUserLoginSerializer
-    
-    def post(self, request, *args, **kwargs):
-        serializer = self.serializer_class(data=request.data,
-                                           context={'request': request})
-        if serializer.is_valid():
-            user = serializer.validated_data['user']
-            token, created = CustomJWT.objects.get_or_create(user=user)
-            
-            return Response({
-                'message': 'Login successful',
-                'user': {
-                    'id': user.user_id,
-                    'username': user.username,
-                    'email': user.email,
-                    'first_name': user.first_name,
-                    'last_name': user.last_name,
-                    'role': user.role,
-                },
-                'token': token.key
-            }, status=status.HTTP_200_OK)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
-class LogoutView(APIView):
-    """
-    Logout view that deletes the user's custom JWT token
-    """
-    permission_classes = [permissions.IsAuthenticated]
-    
-    def post(self, request):
-        try:
-            # Delete the user's custom JWT token to log them out
-            token = CustomJWT.objects.get(user=request.user)
-            token.delete()
-            return Response({
-                'message': 'Successfully logged out'
-            }, status=status.HTTP_200_OK)
-        except CustomJWT.DoesNotExist:
-            return Response({
-                'message': 'Already logged out'
-            }, status=status.HTTP_200_OK)
-        except Exception as e:
-            return Response({
-                'error': 'Something went wrong'
-            }, status=status.HTTP_400_BAD_REQUEST)
-
-
-class ConversationViewSet(viewsets.ModelViewSet):
-    """
-    ViewSet for managing conversations
-    """
-    queryset = Conversation.objects.all()
-    serializer_class = ConversationSerializer
-    permission_classes = [permissions.IsAuthenticated, IsParticipantOfConversation]
-
-    def get_queryset(self):
-        """
-        Return only conversations where the user is a participant
-        """
-        return Conversation.objects.filter(participants=self.request.user)
-
-    def perform_create(self, serializer):
-        """
-        Automatically add the current user as a participant
-        """
-        conversation = serializer.save()
-        if self.request.user not in conversation.participants.all():
-            conversation.participants.add(self.request.user)
-
-    @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])
-    def send_message(self, request, pk=None):
-        """
-        Send a message to a conversation
-        """
-        conversation = self.get_object()
-
-        # Check if user is a participant
-        if request.user not in conversation.participants.all():
-            raise PermissionDenied("You are not a participant of this conversation.")
-
-        # Prepare message data
-        data = request.data.copy()
-        data['sender'] = request.user.user_id
-        data['conversation'] = conversation.conversation_id
-
-        serializer = MessageSerializer(data=data)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
-    @action(detail=True, methods=['get'])
-    def messages(self, request, pk=None):
-        """
-        Get all messages for a conversation
-        """
-        conversation = self.get_object()
-        messages = conversation.messages.all().order_by('-sent_at')
+    Args:
+        request: HTTP request object
         
-        # Pagination
-        page = self.paginate_queryset(messages)
-        if page is not None:
-            serializer = MessageSerializer(page, many=True)
-            return self.get_paginated_response(serializer.data)
+    Returns:
+        Rendered template or redirect
+    """
+    if request.method == 'POST':
+        # Get the password confirmation
+        password = request.POST.get('password', '')
+        confirm_text = request.POST.get('confirm_text', '')
         
-        serializer = MessageSerializer(messages, many=True)
-        return Response(serializer.data)
+        # Verify password
+        if not request.user.check_password(password):
+            messages.error(request, 'Incorrect password. Account deletion cancelled.')
+            return render(request, 'messaging/delete_user.html')
+        
+        # Verify confirmation text
+        if confirm_text != 'DELETE':
+            messages.error(request, 'Please type "DELETE" to confirm account deletion.')
+            return render(request, 'messaging/delete_user.html')
+        
+        # Get user statistics before deletion
+        user = request.user
+        username = user.username
+        
+        # Count related data (for logging/display purposes)
+        sent_messages_count = Message.objects.filter(sender=user).count()
+        received_messages_count = Message.objects.filter(receiver=user).count()
+        notifications_count = Notification.objects.filter(user=user).count()
+        
+        # Log the deletion (optional)
+        print(f"🗑️  Deleting user: {username}")
+        print(f"   - Sent messages: {sent_messages_count}")
+        print(f"   - Received messages: {received_messages_count}")
+        print(f"   - Notifications: {notifications_count}")
+        
+        # Logout the user before deletion
+        logout(request)
+        
+        # Delete the user (signals will handle related data cleanup)
+        user.delete()
+        
+        # Add success message
+        messages.success(
+            request, 
+            f'Account "{username}" has been successfully deleted along with all associated data.'
+        )
+        
+        # Redirect to homepage or registration page
+        return redirect('delete_user_success')
+    
+    # GET request - show confirmation page
+    # Get user statistics to show what will be deleted
+    context = {
+        'sent_messages_count': Message.objects.filter(sender=request.user).count(),
+        'received_messages_count': Message.objects.filter(receiver=request.user).count(),
+        'notifications_count': Notification.objects.filter(user=request.user).count(),
+    }
+    
+    return render(request, 'messaging/delete_user.html', context)
 
 
-class MessageViewSet(viewsets.ModelViewSet):
+def delete_user_success(request):
     """
-    ViewSet for managing messages
+    View to display after successful user deletion.
+    
+    Args:
+        request: HTTP request object
+        
+    Returns:
+        Rendered template
     """
-    queryset = Message.objects.all()
-    serializer_class = MessageSerializer
-    permission_classes = [permissions.IsAuthenticated, IsParticipantOfConversation]
-    filter_backends = [DjangoFilterBackend]
-    filterset_class = MessageFilter
+    return render(request, 'messaging/delete_user_success.html')
 
-    def get_queryset(self):
-        """
-        Return only messages from conversations where user is a participant
-        """
-        user = self.request.user
-        return Message.objects.filter(
-            conversation__participants=user
-        ).select_related('sender', 'conversation').order_by('-sent_at')
 
-    def perform_create(self, serializer):
-        """
-        Set the sender to the current user
-        """
-        serializer.save(sender=self.request.user)
+@login_required
+def user_dashboard(request):
+    """
+    User dashboard showing messages and notifications.
+    
+    Args:
+        request: HTTP request object
+        
+    Returns:
+        Rendered template with user data
+    """
+    # Get user's messages
+    sent_messages = Message.objects.filter(sender=request.user).order_by('-timestamp')[:10]
+    received_messages = Message.objects.filter(receiver=request.user).order_by('-timestamp')[:10]
+    
+    # Get user's notifications
+    notifications = Notification.objects.filter(user=request.user).order_by('-timestamp')[:10]
+    unread_notifications = Notification.get_unread_count(request.user)
+    
+    context = {
+        'sent_messages': sent_messages,
+        'received_messages': received_messages,
+        'notifications': notifications,
+        'unread_notifications': unread_notifications,
+    }
+    
+    return render(request, 'messaging/dashboard.html', context)
+
+
+@login_required
+@require_http_methods(["POST"])
+def send_message(request):
+    """
+    View to send a message to another user.
+    
+    Args:
+        request: HTTP request object
+        
+    Returns:
+        JSON response or redirect
+    """
+    receiver_username = request.POST.get('receiver')
+    content = request.POST.get('content')
+    
+    # Validate input
+    if not receiver_username or not content:
+        messages.error(request, 'Please provide both receiver and message content.')
+        return redirect('user_dashboard')
+    
+    try:
+        receiver = User.objects.get(username=receiver_username)
+        
+        # Don't allow sending messages to self
+        if receiver == request.user:
+            messages.error(request, 'You cannot send a message to yourself.')
+            return redirect('user_dashboard')
+        
+        # Create the message (signal will create notification automatically)
+        message = Message.objects.create(
+            sender=request.user,
+            receiver=receiver,
+            content=content
+        )
+        
+        messages.success(request, f'Message sent to {receiver_username}!')
+        
+        # Return JSON for AJAX requests
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({
+                'status': 'success',
+                'message': 'Message sent successfully',
+                'message_id': message.id
+            })
+        
+        return redirect('user_dashboard')
+        
+    except User.DoesNotExist:
+        messages.error(request, f'User "{receiver_username}" does not exist.')
+        return redirect('user_dashboard')
+
+
+@login_required
+def message_detail(request, message_id):
+    """
+    View to display a single message with its edit history.
+    
+    Args:
+        request: HTTP request object
+        message_id: ID of the message to display
+        
+    Returns:
+        Rendered template with message details
+    """
+    try:
+        # Get the message
+        message = Message.objects.get(id=message_id)
+        
+        # Check if user is sender or receiver
+        if request.user not in [message.sender, message.receiver]:
+            messages.error(request, 'You do not have permission to view this message.')
+            return redirect('user_dashboard')
+        
+        # Mark as read if user is receiver
+        if request.user == message.receiver and not message.is_read:
+            message.mark_as_read()
+        
+        # Get edit history
+        edit_history = message.get_edit_history()
+        
+        context = {
+            'message': message,
+            'edit_history': edit_history,
+            'is_sender': request.user == message.sender,
+        }
+        
+        return render(request, 'messaging/message_detail.html', context)
+        
+    except Message.DoesNotExist:
+        messages.error(request, 'Message not found.')
+        return redirect('user_dashboard')
+
+
+@login_required
+@require_http_methods(["POST"])
+def edit_message(request, message_id):
+    """
+    View to edit a message (sender only).
+    
+    Args:
+        request: HTTP request object
+        message_id: ID of the message to edit
+        
+    Returns:
+        Redirect to message detail
+    """
+    try:
+        message = Message.objects.get(id=message_id)
+        
+        # Only sender can edit
+        if request.user != message.sender:
+            messages.error(request, 'You can only edit your own messages.')
+            return redirect('user_dashboard')
+        
+        new_content = request.POST.get('content')
+        
+        if not new_content:
+            messages.error(request, 'Message content cannot be empty.')
+            return redirect('message_detail', message_id=message_id)
+        
+        # Update message (signal will save history automatically)
+        message.content = new_content
+        message.save()
+        
+        messages.success(request, 'Message edited successfully!')
+        return redirect('message_detail', message_id=message_id)
+        
+    except Message.DoesNotExist:
+        messages.error(request, 'Message not found.')
+        return redirect('user_dashboard')
+
+
+@login_required
+def notifications_list(request):
+    """
+    View to display all notifications for the user.
+    
+    Args:
+        request: HTTP request object
+        
+    Returns:
+        Rendered template with notifications
+    """
+    notifications = Notification.objects.filter(user=request.user).order_by('-timestamp')
+    unread_count = Notification.get_unread_count(request.user)
+    
+    context = {
+        'notifications': notifications,
+        'unread_count': unread_count,
+    }
+    
+    return render(request, 'messaging/notifications.html', context)
+
+
+@login_required
+@require_http_methods(["POST"])
+def mark_notification_read(request, notification_id):
+    """
+    View to mark a notification as read.
+    
+    Args:
+        request: HTTP request object
+        notification_id: ID of the notification
+        
+    Returns:
+        Redirect or JSON response
+    """
+    try:
+        notification = Notification.objects.get(id=notification_id, user=request.user)
+        notification.mark_as_read()
+        
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({'status': 'success'})
+        
+        return redirect('notifications_list')
+        
+    except Notification.DoesNotExist:
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({'status': 'error', 'message': 'Notification not found'}, status=404)
+        
+        messages.error(request, 'Notification not found.')
+        return redirect('notifications_list')
+
+
+@login_required
+@require_http_methods(["POST"])
+def mark_all_notifications_read(request):
+    """
+    View to mark all notifications as read for the current user.
+    
+    Args:
+        request: HTTP request object
+        
+    Returns:
+        Redirect or JSON response
+    """
+    Notification.mark_all_as_read(request.user)
+    
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return JsonResponse({'status': 'success'})
+    
+    messages.success(request, 'All notifications marked as read.')
+    return redirect('notifications_list')

@@ -1,6 +1,7 @@
-from django.db.models.signals import post_save, pre_save
+from django.db.models.signals import post_save, pre_save, post_delete
 from django.dispatch import receiver
 from django.utils import timezone
+from django.contrib.auth.models import User
 from .models import Message, Notification, MessageHistory
 
 
@@ -87,3 +88,87 @@ def log_message_creation(sender, instance, created, **kwargs):
         print(f"📧 New message: {instance.sender.username} → {instance.receiver.username}")
     elif instance.edited:
         print(f"✏️ Message edited: #{instance.pk} by {instance.sender.username}")
+
+
+@receiver(post_delete, sender=User)
+def cleanup_user_data(sender, instance, **kwargs):
+    """
+    Signal handler that cleans up all related data when a user is deleted.
+    
+    This handles deletion of:
+    - Messages sent by the user
+    - Messages received by the user
+    - Notifications for the user
+    - Message histories associated with the user
+    
+    Args:
+        sender: The model class (User)
+        instance: The User instance being deleted
+        **kwargs: Additional keyword arguments
+    """
+    username = instance.username
+    
+    print(f"🗑️  Post-delete signal triggered for user: {username}")
+    
+    # Count items before deletion (for logging)
+    sent_messages_count = Message.objects.filter(sender=instance).count()
+    received_messages_count = Message.objects.filter(receiver=instance).count()
+    notifications_count = Notification.objects.filter(user=instance).count()
+    message_edits_count = MessageHistory.objects.filter(edited_by=instance).count()
+    
+    print(f"   📊 Data to be cleaned up:")
+    print(f"      - Sent messages: {sent_messages_count}")
+    print(f"      - Received messages: {received_messages_count}")
+    print(f"      - Notifications: {notifications_count}")
+    print(f"      - Message edits: {message_edits_count}")
+    
+    # Delete messages sent by the user
+    # (CASCADE on ForeignKey should handle this, but we can be explicit)
+    deleted_sent = Message.objects.filter(sender=instance).delete()
+    print(f"   ✅ Deleted sent messages: {deleted_sent[0] if deleted_sent[0] else 0}")
+    
+    # Delete messages received by the user
+    deleted_received = Message.objects.filter(receiver=instance).delete()
+    print(f"   ✅ Deleted received messages: {deleted_received[0] if deleted_received[0] else 0}")
+    
+    # Delete notifications for the user
+    deleted_notifications = Notification.objects.filter(user=instance).delete()
+    print(f"   ✅ Deleted notifications: {deleted_notifications[0] if deleted_notifications[0] else 0}")
+    
+    # Update message histories where user was the editor (set to NULL)
+    # This preserves the history but removes the user reference
+    updated_histories = MessageHistory.objects.filter(edited_by=instance).update(edited_by=None)
+    print(f"   ✅ Updated message histories: {updated_histories}")
+    
+    print(f"✅ User cleanup completed for: {username}")
+
+
+@receiver(pre_save, sender=User)
+def log_user_changes(sender, instance, **kwargs):
+    """
+    Signal handler that logs when user data is changed.
+    
+    This is useful for auditing purposes.
+    
+    Args:
+        sender: The model class (User)
+        instance: The User instance being saved
+        **kwargs: Additional keyword arguments
+    """
+    if instance.pk:
+        try:
+            old_user = User.objects.get(pk=instance.pk)
+            
+            # Check if username changed
+            if old_user.username != instance.username:
+                print(f"⚠️  Username changed: {old_user.username} → {instance.username}")
+            
+            # Check if email changed
+            if old_user.email != instance.email:
+                print(f"📧 Email changed for {instance.username}: {old_user.email} → {instance.email}")
+                
+        except User.DoesNotExist:
+            pass
+    else:
+        # New user being created
+        print(f"👤 New user being created: {instance.username}")
