@@ -2,7 +2,6 @@ from django.test import TestCase
 from django.contrib.auth.models import User
 from .models import Message, Notification, MessageHistory
 
-
 class MessageModelTest(TestCase):
     """Test cases for Message model."""
 
@@ -565,3 +564,208 @@ class SignalTest(TestCase):
         # Verify the link
         self.assertEqual(notification.message, message)
         self.assertEqual(notification.message.content, "Test message for linking")
+
+
+class ThreadedMessageTest(TestCase):
+    """Test cases for threaded message functionality."""
+
+    def setUp(self):
+        """Set up test users."""
+        self.user1 = User.objects.create_user(
+            username='user1',
+            email='user1@example.com',
+            password='testpass123'
+        )
+        self.user2 = User.objects.create_user(
+            username='user2',
+            email='user2@example.com',
+            password='testpass123'
+        )
+        self.user3 = User.objects.create_user(
+            username='user3',
+            email='user3@example.com',
+            password='testpass123'
+        )
+
+    def test_create_root_message(self):
+        """Test creating a root message without parent."""
+        message = Message.objects.create(
+            sender=self.user1,
+            receiver=self.user2,
+            content="This is a root message"
+        )
+        
+        self.assertIsNone(message.parent_message)
+        self.assertFalse(message.is_reply())
+        self.assertEqual(message.get_thread_root(), message)
+
+    def test_create_reply_message(self):
+        """Test creating a reply to an existing message."""
+        root_message = Message.objects.create(
+            sender=self.user1,
+            receiver=self.user2,
+            content="Root message"
+        )
+        
+        reply = Message.objects.create(
+            sender=self.user2,
+            receiver=self.user1,
+            content="This is a reply",
+            parent_message=root_message
+        )
+        
+        self.assertEqual(reply.parent_message, root_message)
+        self.assertTrue(reply.is_reply())
+        self.assertEqual(reply.get_thread_root(), root_message)
+
+    def test_nested_replies(self):
+        """Test creating nested replies (reply to a reply)."""
+        # Create root message
+        root = Message.objects.create(
+            sender=self.user1,
+            receiver=self.user2,
+            content="Root message"
+        )
+        
+        # First level reply
+        reply1 = Message.objects.create(
+            sender=self.user2,
+            receiver=self.user1,
+            content="First reply",
+            parent_message=root
+        )
+        
+        # Second level reply (reply to reply)
+        reply2 = Message.objects.create(
+            sender=self.user1,
+            receiver=self.user2,
+            content="Reply to reply",
+            parent_message=reply1
+        )
+        
+        # Verify hierarchy
+        self.assertEqual(reply1.get_thread_root(), root)
+        self.assertEqual(reply2.get_thread_root(), root)
+        self.assertEqual(reply2.parent_message, reply1)
+
+    def test_get_replies(self):
+        """Test getting direct replies to a message."""
+        root = Message.objects.create(
+            sender=self.user1,
+            receiver=self.user2,
+            content="Root message"
+        )
+        
+        # Create multiple replies
+        reply1 = Message.objects.create(
+            sender=self.user2,
+            receiver=self.user1,
+            content="Reply 1",
+            parent_message=root
+        )
+        
+        reply2 = Message.objects.create(
+            sender=self.user2,
+            receiver=self.user1,
+            content="Reply 2",
+            parent_message=root
+        )
+        
+        replies = root.get_replies()
+        self.assertEqual(replies.count(), 2)
+        self.assertIn(reply1, replies)
+        self.assertIn(reply2, replies)
+
+    def test_get_all_replies_recursive(self):
+        """Test getting all replies recursively including nested ones."""
+        # Create a complex thread structure
+        root = Message.objects.create(
+            sender=self.user1,
+            receiver=self.user2,
+            content="Root"
+        )
+        
+        reply1 = Message.objects.create(
+            sender=self.user2,
+            receiver=self.user1,
+            content="Reply 1",
+            parent_message=root
+        )
+        
+        reply1_1 = Message.objects.create(
+            sender=self.user1,
+            receiver=self.user2,
+            content="Reply 1.1",
+            parent_message=reply1
+        )
+        
+        reply1_1_1 = Message.objects.create(
+            sender=self.user2,
+            receiver=self.user1,
+            content="Reply 1.1.1",
+            parent_message=reply1_1
+        )
+        
+        reply2 = Message.objects.create(
+            sender=self.user2,
+            receiver=self.user1,
+            content="Reply 2",
+            parent_message=root
+        )
+        
+        # Get all replies recursively
+        all_replies = root.get_all_replies_recursive()
+        
+        # Should include all 4 replies
+        self.assertEqual(len(all_replies), 4)
+        self.assertIn(reply1, all_replies)
+        self.assertIn(reply1_1, all_replies)
+        self.assertIn(reply1_1_1, all_replies)
+        self.assertIn(reply2, all_replies)
+
+    def test_get_reply_count(self):
+        """Test getting the count of direct replies."""
+        root = Message.objects.create(
+            sender=self.user1,
+            receiver=self.user2,
+            content="Root"
+        )
+        
+        self.assertEqual(root.get_reply_count(), 0)
+        
+        # Add direct replies
+        Message.objects.create(
+            sender=self.user2,
+            receiver=self.user1,
+            content="Reply 1",
+            parent_message=root
+        )
+        
+        Message.objects.create(
+            sender=self.user2,
+            receiver=self.user1,
+            content="Reply 2",
+            parent_message=root
+        )
+        
+        self.assertEqual(root.get_reply_count(), 2)
+
+    def test_get_total_reply_count(self):
+        """Test getting total count of all replies including nested ones."""
+        root = Message.objects.create(
+            sender=self.user1,
+            receiver=self.user2,
+            content="Root"
+        )
+        
+        reply1 = Message.objects.create(
+            sender=self.user2,
+            receiver=self.user1,
+            content="Reply 1",
+            parent_message=root
+        )
+        
+        # Nested reply
+        Message.objects.create(
+            sender=self.user1,
+            receiver=self.user

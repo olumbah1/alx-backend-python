@@ -1,4 +1,4 @@
-from django.shortcuts import render, redirect
+from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth import logout
 from django.contrib import messages
@@ -6,6 +6,8 @@ from django.contrib.auth.models import User
 from django.views.decorators.http import require_http_methods
 from django.http import JsonResponse
 from .models import Message, Notification, MessageHistory
+from django.contrib import messages as django_messages
+from django.db.models import Q, Prefetch, Count
 
 
 @login_required
@@ -324,3 +326,364 @@ def mark_all_notifications_read(request):
     
     messages.success(request, 'All notifications marked as read.')
     return redirect('notifications_list')
+
+
+@login_required
+def conversation_list(request):
+    """
+    View to display all conversation threads for the current user.
+    Uses optimized queries with select_related and prefetch_related.
+    
+    Args:
+        request: HTTP request object
+        
+    Returns:
+        Rendered template with conversation threads
+    """
+    # Get all threads involving the user with optimized queries
+    threads = Message.get_user_threads(request.user)
+    
+    # Add reply count annotation for each thread
+    threads_with_counts = []
+    for thread in threads:
+        thread_data = {
+            'message': thread,
+            'reply_count': thread.get_reply_count(),
+            'total_reply_count': thread.get_total_reply_count(),
+            'other_user': thread.receiver if thread.sender == request.user else thread.sender,
+            'last_activity': thread.timestamp,
+        }
+        threads_with_counts.append(thread_data)
+    
+    context = {
+        'threads': threads_with_counts,
+    }
+    
+    return render(request, 'messaging/conversation_list.html', context)
+
+
+@login_required
+def thread_detail(request, message_id):
+    """
+    View to display a single threaded conversation.
+    Shows the root message and all nested replies in a threaded format.
+    Uses optimized recursive querying.
+    
+    Args:
+        request: HTTP request object
+        message_id: ID of the root message
+        
+    Returns:
+        Rendered template with threaded conversation
+    """
+    # Get the message with optimized query
+    message = get_object_or_404(
+        Message.objects.select_related('sender', 'receiver', 'parent_message'),
+        id=message_id
+    )
+    
+    # Check if user is part of this conversation
+    root_message = message.get_thread_root()
+    participants = root_message.get_thread_participants()
+    
+    if request.user not in participants:
+        django_messages.error(request, 'You do not have permission to view this conversation.')
+        return redirect('conversation_list')
+    
+    # Get all messages in thread with optimized query
+    thread_messages = root_message.get_thread_messages()
+    
+    # Build threaded structure
+    def build_thread_tree(parent_msg, all_messages):
+        """
+        Recursively build a nested structure for template rendering.
+        """
+        thread_tree = {
+            'message': parent_msg,
+            'replies': []
+        }
+        
+        # Find direct replies
+        for msg in all_messages:
+            if msg.parent_message and msg.parent_message.id == parent_msg.id:
+                thread_tree['replies'].append(build_thread_tree(msg, all_messages))
+        
+        return thread_tree
+    
+    # Build the threaded structure
+    thread_tree = build_thread_tree(root_message, thread_messages)
+    
+    # Mark messages as read if user is receiver
+    for msg in thread_messages:
+        if msg.receiver == request.user and not msg.is_read:
+            msg.mark_as_read()
+    
+    context = {
+        'root_message': root_message,
+        'thread_tree': thread_tree,
+        'participants': participants,
+        'total_messages': len(thread_messages),
+    }
+    
+    return render(request, 'messaging/thread_detail.html', context)
+
+
+@login_required
+def send_reply(request, parent_message_id):
+    """
+    View to send a reply to a specific message.
+    
+    Args:
+        request: HTTP request object
+        parent_message_id: ID of the parent message
+        
+    Returns:
+        Redirect to thread detail or JSON response
+    """
+    if request.method != 'POST':
+        django_messages.error(request, 'Invalid request method.')
+        return redirect('conversation_list')
+    
+    # Get the parent message
+    parent_message = get_object_or_404(
+        Message.objects.select_related('sender', 'receiver'),
+        id=parent_message_id
+    )
+    
+    # Check if user is part of the conversation
+    if request.user not in [parent_message.sender, parent_message.receiver]:
+        django_messages.error(request, 'You cannot reply to this message.')
+        return redirect('conversation_list')
+    
+    content = request.POST.get('content', '').strip()
+    
+    if not content:
+        django_messages.error(request, 'Reply content cannot be empty.')
+        return redirect('thread_detail', message_id=parent_message.get_thread_root().id)
+    
+    # Determine receiver (the other person in the conversation)
+    receiver = parent_message.sender if request.user == parent_message.receiver else parent_message.receiver
+    
+    # Create the reply message
+    reply = Message.objects.create(
+        sender=request.user,
+        receiver=receiver,
+        content=content,
+        parent_message=parent_message
+    )
+    
+    django_messages.success(request, 'Reply sent successfully!')
+    
+    # Return JSON for AJAX requests
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return JsonResponse({
+            'status': 'success',
+            'message_id': reply.id,
+            'parent_message_id': parent_message_id
+        })
+    
+    # Redirect to the thread root
+    return redirect('thread_detail', message_id=parent_message.get_thread_root().id)
+
+
+@login_required
+def start_conversation(request):
+    """
+    View to start a new conversation thread.
+    
+    Args:
+        request: HTTP request object
+        
+    Returns:
+        Rendered template or redirect
+    """
+    if request.method == 'POST':
+        receiver_username = request.POST.get('receiver', '').strip()
+        content = request.POST.get('content', '').strip()
+        
+        if not receiver_username or not content:
+            django_messages.error(request, 'Please provide both receiver and message content.')
+            return render(request, 'messaging/start_conversation.html')
+        
+        try:
+            receiver = User.objects.get(username=receiver_username)
+            
+            if receiver == request.user:
+                django_messages.error(request, 'You cannot send a message to yourself.')
+                return render(request, 'messaging/start_conversation.html')
+            
+            # Create the root message (no parent)
+            message = Message.objects.create(
+                sender=request.user,
+                receiver=receiver,
+                content=content,
+                parent_message=None  # Root message
+            )
+            
+            django_messages.success(request, f'Message sent to {receiver_username}!')
+            return redirect('thread_detail', message_id=message.id)
+            
+        except User.DoesNotExist:
+            django_messages.error(request, f'User "{receiver_username}" does not exist.')
+            return render(request, 'messaging/start_conversation.html')
+    
+    # GET request - show form
+    # Get all users except current user
+    users = User.objects.exclude(id=request.user.id).order_by('username')
+    
+    context = {
+        'users': users,
+    }
+    
+    return render(request, 'messaging/start_conversation.html', context)
+
+
+@login_required
+def conversation_with_user(request, username):
+    """
+    View to display all conversation threads with a specific user.
+    
+    Args:
+        request: HTTP request object
+        username: Username of the other user
+        
+    Returns:
+        Rendered template with conversations
+    """
+    other_user = get_object_or_404(User, username=username)
+    
+    if other_user == request.user:
+        django_messages.error(request, 'You cannot view conversations with yourself.')
+        return redirect('conversation_list')
+    
+    # Get all threads between these two users
+    threads = Message.get_conversation_threads(request.user, other_user)
+    
+    # Add statistics
+    threads_with_stats = []
+    for thread in threads:
+        thread_data = {
+            'message': thread,
+            'reply_count': thread.get_reply_count(),
+            'total_reply_count': thread.get_total_reply_count(),
+        }
+        threads_with_stats.append(thread_data)
+    
+    context = {
+        'other_user': other_user,
+        'threads': threads_with_stats,
+    }
+    
+    return render(request, 'messaging/conversation_with_user.html', context)
+
+
+@login_required
+def get_message_replies_json(request, message_id):
+    """
+    API endpoint to get all replies for a message in JSON format.
+    Useful for dynamic loading or AJAX requests.
+    
+    Args:
+        request: HTTP request object
+        message_id: ID of the message
+        
+    Returns:
+        JSON response with replies
+    """
+    message = get_object_or_404(Message, id=message_id)
+    
+    # Check permission
+    if request.user not in [message.sender, message.receiver]:
+        return JsonResponse({'error': 'Permission denied'}, status=403)
+    
+    # Get all replies recursively
+    replies = message.get_all_replies_recursive()
+    
+    # Format for JSON
+    replies_data = []
+    for reply in replies:
+        replies_data.append({
+            'id': reply.id,
+            'sender': reply.sender.username,
+            'receiver': reply.receiver.username,
+            'content': reply.content,
+            'timestamp': reply.timestamp.isoformat(),
+            'is_read': reply.is_read,
+            'edited': reply.edited,
+            'parent_id': reply.parent_message.id if reply.parent_message else None,
+        })
+    
+    return JsonResponse({
+        'message_id': message.id,
+        'reply_count': len(replies),
+        'replies': replies_data
+    })
+
+
+@login_required
+def thread_statistics(request, message_id):
+    """
+    View to display statistics for a conversation thread.
+    
+    Args:
+        request: HTTP request object
+        message_id: ID of the root message
+        
+    Returns:
+        JSON response with statistics
+    """
+    message = get_object_or_404(Message, id=message_id)
+    
+    # Get thread root
+    root = message.get_thread_root()
+    
+    # Check permission
+    participants = root.get_thread_participants()
+    if request.user not in participants:
+        return JsonResponse({'error': 'Permission denied'}, status=403)
+    
+    # Get all thread messages
+    thread_messages = root.get_thread_messages()
+    
+    # Calculate statistics
+    total_messages = len(thread_messages)
+    messages_by_user = {}
+    
+    for msg in thread_messages:
+        username = msg.sender.username
+        messages_by_user[username] = messages_by_user.get(username, 0) + 1
+    
+    stats = {
+        'thread_id': root.id,
+        'total_messages': total_messages,
+        'participants': [u.username for u in participants],
+        'messages_by_user': messages_by_user,
+        'created_at': root.timestamp.isoformat(),
+        'max_depth': calculate_thread_depth(root),
+    }
+    
+    return JsonResponse(stats)
+
+
+def calculate_thread_depth(message, current_depth=1):
+    """
+    Calculate the maximum depth of a thread.
+    
+    Args:
+        message: The root message
+        current_depth: Current depth level
+        
+    Returns:
+        Maximum depth as integer
+    """
+    replies = message.get_replies()
+    
+    if not replies:
+        return current_depth
+    
+    max_depth = current_depth
+    for reply in replies:
+        depth = calculate_thread_depth(reply, current_depth + 1)
+        max_depth = max(max_depth, depth)
+    
+    return max_depth
