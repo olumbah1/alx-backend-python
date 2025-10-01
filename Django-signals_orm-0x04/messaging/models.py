@@ -1,6 +1,7 @@
 from django.db import models
 from django.contrib.auth.models import User
 from django.utils import timezone
+from .managers import UnreadMessagesManager
 
 
 class UnreadMessagesManager(models.Manager):
@@ -217,8 +218,8 @@ class Message(models.Model):
     # Default manager
     objects = MessageQuerySet.as_manager()
     
-    # Custom manager for unread messages
-    unread_messages = UnreadMessagesManager()
+    # Custom manager for unread messages - named 'unread'
+    unread = UnreadMessagesManager()
 
     class Meta:
         ordering = ['-timestamp']
