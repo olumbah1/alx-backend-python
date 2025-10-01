@@ -768,4 +768,66 @@ class ThreadedMessageTest(TestCase):
         # Nested reply
         Message.objects.create(
             sender=self.user1,
-            receiver=self.user
+            receiver=self.user)
+
+
+class UnreadMessagesManagerTest(TestCase):
+    """Test cases for custom UnreadMessagesManager."""
+
+    def setUp(self):
+        """Set up test users and messages."""
+        self.user1 = User.objects.create_user(
+            username='user1',
+            email='user1@example.com',
+            password='testpass123'
+        )
+        self.user2 = User.objects.create_user(
+            username='user2',
+            email='user2@example.com',
+            password='testpass123'
+        )
+        self.user3 = User.objects.create_user(
+            username='user3',
+            email='user3@example.com',
+            password='testpass123'
+        )
+
+    def test_unread_for_user(self):
+        """Test getting unread messages for a specific user."""
+        # Create messages
+        msg1 = Message.objects.create(
+            sender=self.user1,
+            receiver=self.user2,
+            content="Unread message 1"
+        )
+        
+        msg2 = Message.objects.create(
+            sender=self.user1,
+            receiver=self.user2,
+            content="Unread message 2"
+        )
+        
+        # Create a read message
+        msg3 = Message.objects.create(
+            sender=self.user1,
+            receiver=self.user2,
+            content="Read message",
+            is_read=True
+        )
+        
+        # Get unread messages using custom manager
+        unread = Message.unread_messages.unread_for_user(self.user2)
+        
+        self.assertEqual(unread.count(), 2)
+        self.assertIn(msg1, unread)
+        self.assertIn(msg2, unread)
+        self.assertNotIn(msg3, unread)
+
+    def test_unread_count_for_user(self):
+        """Test getting count of unread messages."""
+        # Create unread messages
+        for i in range(5):
+            Message.objects.create(
+                sender=self.user1,
+                receiver=self.user2,
+                content=f"Message {i}")

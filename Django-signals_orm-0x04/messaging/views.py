@@ -5,10 +5,10 @@ from django.contrib import messages
 from django.contrib.auth.models import User
 from django.views.decorators.http import require_http_methods
 from django.http import JsonResponse
-from .models import Message, Notification, MessageHistory
+from .models import Message, Notification
 from django.contrib import messages as django_messages
-from django.db.models import Q, Prefetch, Count
-
+from django.db.models import Q
+from .models import Message, Notification
 
 @login_required
 @require_http_methods(["GET", "POST"])
@@ -687,3 +687,365 @@ def calculate_thread_depth(message, current_depth=1):
         max_depth = max(max_depth, depth)
     
     return max_depth
+
+
+@login_required
+def unread_inbox(request):
+    """
+    View to display only unread messages for the current user.
+    Uses custom UnreadMessagesManager for optimized queries.
+    
+    Args:
+        request: HTTP request object
+        
+    Returns:
+        Rendered template with unread messages
+    """
+    # Get unread messages using custom manager with optimization
+    unread_messages = Message.unread_messages.unread_with_preview(request.user)
+    
+    # Get inbox summary statistics
+    inbox_summary = Message.get_inbox_summary(request.user)
+    
+    # Get unread messages grouped by sender
+    unread_by_sender = Message.unread_messages.unread_by_conversation(request.user)
+    
+    context = {
+        'unread_messages': unread_messages,
+        'inbox_summary': inbox_summary,
+        'unread_by_sender': unread_by_sender,
+    }
+    
+    return render(request, 'messaging/unread_inbox.html', context)
+
+
+@login_required
+def full_inbox(request):
+    """
+    View to display all messages (read and unread) for the current user.
+    
+    Args:
+        request: HTTP request object
+        
+    Returns:
+        Rendered template with all messages
+    """
+    # Get all received messages with optimization
+    all_messages = Message.objects.received_by(request.user).optimized()
+    
+    # Separate read and unread
+    unread_messages = all_messages.filter(is_read=False)
+    read_messages = all_messages.filter(is_read=True)
+    
+    # Get statistics
+    inbox_summary = Message.get_inbox_summary(request.user)
+    
+    context = {
+        'unread_messages': unread_messages,
+        'read_messages': read_messages,
+        'inbox_summary': inbox_summary,
+    }
+    
+    return render(request, 'messaging/full_inbox.html', context)
+
+
+@login_required
+def unread_from_user(request, username):
+    """
+    View to display unread messages from a specific user.
+    
+    Args:
+        request: HTTP request object
+        username: Username of the sender
+        
+    Returns:
+        Rendered template with unread messages from sender
+    """
+    sender = get_object_or_404(User, username=username)
+    
+    # Get unread messages from this specific sender using custom manager
+    unread_messages = Message.unread_messages.unread_from_sender(
+        receiver=request.user,
+        sender=sender
+    )
+    
+    context = {
+        'sender': sender,
+        'unread_messages': unread_messages,
+        'unread_count': unread_messages.count(),
+    }
+    
+    return render(request, 'messaging/unread_from_user.html', context)
+
+
+@login_required
+def mark_message_read(request, message_id):
+    """
+    View to mark a specific message as read.
+    
+    Args:
+        request: HTTP request object
+        message_id: ID of the message
+        
+    Returns:
+        Redirect or JSON response
+    """
+    message = get_object_or_404(Message, id=message_id, receiver=request.user)
+    
+    message.mark_as_read()
+    
+    # Return JSON for AJAX requests
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return JsonResponse({
+            'status': 'success',
+            'message_id': message_id,
+            'is_read': True
+        })
+    
+    django_messages.success(request, 'Message marked as read.')
+    return redirect('unread_inbox')
+
+
+@login_required
+def mark_message_unread(request, message_id):
+    """
+    View to mark a specific message as unread.
+    
+    Args:
+        request: HTTP request object
+        message_id: ID of the message
+        
+    Returns:
+        Redirect or JSON response
+    """
+    message = get_object_or_404(Message, id=message_id, receiver=request.user)
+    
+    message.mark_as_unread()
+    
+    # Return JSON for AJAX requests
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return JsonResponse({
+            'status': 'success',
+            'message_id': message_id,
+            'is_read': False
+        })
+    
+    django_messages.success(request, 'Message marked as unread.')
+    return redirect('full_inbox')
+
+
+@login_required
+def mark_all_read(request):
+    """
+    View to mark all unread messages as read for the current user.
+    Uses custom manager method for bulk update.
+    
+    Args:
+        request: HTTP request object
+        
+    Returns:
+        Redirect or JSON response
+    """
+    # Use custom manager to mark all as read
+    count = Message.unread_messages.mark_all_as_read(request.user)
+    
+    # Return JSON for AJAX requests
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return JsonResponse({
+            'status': 'success',
+            'messages_marked': count
+        })
+    
+    django_messages.success(request, f'{count} message(s) marked as read.')
+    return redirect('full_inbox')
+
+
+@login_required
+def unread_threads(request):
+    """
+    View to display only unread conversation threads.
+    Shows root messages that are unread.
+    
+    Args:
+        request: HTTP request object
+        
+    Returns:
+        Rendered template with unread threads
+    """
+    # Get unread threads using custom manager
+    unread_threads = Message.unread_messages.unread_threads_for_user(request.user)
+    
+    # Add reply counts
+    threads_with_info = []
+    for thread in unread_threads:
+        threads_with_info.append({
+            'message': thread,
+            'unread_replies': thread.get_unread_replies_count(request.user),
+            'total_replies': thread.get_reply_count(),
+        })
+    
+    context = {
+        'unread_threads': threads_with_info,
+        'total_unread_count': Message.unread_messages.unread_count_for_user(request.user),
+    }
+    
+    return render(request, 'messaging/unread_threads.html', context)
+
+
+@login_required
+def inbox_api(request):
+    """
+    API endpoint to get inbox information in JSON format.
+    Returns unread message data with optimized queries.
+    
+    Args:
+        request: HTTP request object
+        
+    Returns:
+        JSON response with inbox data
+    """
+    # Get inbox summary
+    summary = Message.get_inbox_summary(request.user)
+    
+    # Get recent unread messages (limited to 10 for performance)
+    recent_unread = Message.get_unread_inbox(request.user, limit=10)
+    
+    # Format messages for JSON
+    messages_data = []
+    for msg in recent_unread:
+        messages_data.append({
+            'id': msg.id,
+            'sender': msg.sender.username,
+            'content': msg.content[:100],  # Preview only
+            'timestamp': msg.timestamp.isoformat(),
+        })
+    
+    response_data = {
+        'summary': summary,
+        'recent_unread': messages_data,
+    }
+    
+    return JsonResponse(response_data)
+
+
+@login_required
+def unread_count_api(request):
+    """
+    Lightweight API endpoint to get just the unread message count.
+    Useful for badge notifications.
+    
+    Args:
+        request: HTTP request object
+        
+    Returns:
+        JSON response with unread count
+    """
+    unread_count = Message.unread_messages.unread_count_for_user(request.user)
+    
+    return JsonResponse({
+        'unread_count': unread_count
+    })
+
+
+@login_required
+def conversation_unread(request, username):
+    """
+    View to display unread messages in a conversation with a specific user.
+    
+    Args:
+        request: HTTP request object
+        username: Username of the other user
+        
+    Returns:
+        Rendered template with unread messages
+    """
+    other_user = get_object_or_404(User, username=username)
+    
+    # Get unread messages from this user
+    unread_messages = Message.unread_messages.unread_from_sender(
+        receiver=request.user,
+        sender=other_user
+    )
+    
+    # Get all messages in conversation (for context)
+    all_messages = Message.objects.filter(
+        Q(sender=request.user, receiver=other_user) |
+        Q(sender=other_user, receiver=request.user)
+    ).optimized().order_by('timestamp')
+    
+    context = {
+        'other_user': other_user,
+        'unread_messages': unread_messages,
+        'all_messages': all_messages,
+        'unread_count': unread_messages.count(),
+        'total_count': all_messages.count(),
+    }
+    
+    return render(request, 'messaging/conversation_unread.html', context)
+
+
+@login_required
+def batch_mark_read(request):
+    """
+    View to mark multiple messages as read at once.
+    Accepts a list of message IDs via POST.
+    
+    Args:
+        request: HTTP request object
+        
+    Returns:
+        JSON response with result
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=400)
+    
+    # Get message IDs from POST data
+    message_ids = request.POST.getlist('message_ids[]')
+    
+    if not message_ids:
+        return JsonResponse({'error': 'No message IDs provided'}, status=400)
+    
+    # Mark messages as read (only user's own messages)
+    updated_count = Message.objects.filter(
+        id__in=message_ids,
+        receiver=request.user,
+        is_read=False
+    ).update(is_read=True)
+    
+    return JsonResponse({
+        'status': 'success',
+        'messages_marked': updated_count
+    })
+
+
+@login_required
+def unread_dashboard(request):
+    """
+    Dashboard view showing comprehensive unread message statistics.
+    
+    Args:
+        request: HTTP request object
+        
+    Returns:
+        Rendered template with dashboard data
+    """
+    # Get full inbox summary
+    inbox_summary = Message.get_inbox_summary(request.user)
+    
+    # Get unread messages grouped by sender
+    unread_by_sender = Message.unread_messages.unread_by_conversation(request.user)
+    
+    # Get recent unread messages
+    recent_unread = Message.get_unread_inbox(request.user, limit=5)
+    
+    # Get unread threads
+    unread_thread_count = Message.unread_messages.unread_threads_for_user(request.user).count()
+    
+    context = {
+        'inbox_summary': inbox_summary,
+        'unread_by_sender': unread_by_sender,
+        'recent_unread': recent_unread,
+        'unread_thread_count': unread_thread_count,
+    }
+    
+    return render(request, 'messaging/unread_dashboard.html', context)
