@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
+    'chats',
     'messaging',
     'django_filters',
     'rest_framework_simplejwt',
@@ -55,10 +56,10 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     
     
-    'messaging.middleware.RequestLoggingMiddleware',
-    'messaging.middleware.RestrictAccessByTimeMiddleware',
-    'messaging.middleware.OffensiveLanguageMiddleware',
-    'messaging.middleware.RolepermissionMiddleware',
+    'chats.middleware.RequestLoggingMiddleware',
+    'chats.middleware.RestrictAccessByTimeMiddleware',
+    'chats.middleware.OffensiveLanguageMiddleware',
+    'chats.middleware.RolepermissionMiddleware',
 ]
 
 
