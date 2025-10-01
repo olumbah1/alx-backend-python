@@ -363,7 +363,8 @@ def conversation_list(request):
     
     return render(request, 'messaging/conversation_list.html', context)
 
-
+@login_required
+@cache_page(60)
 @login_required
 def thread_detail(request, message_id):
     """
@@ -539,7 +540,8 @@ def start_conversation(request):
     
     return render(request, 'messaging/start_conversation.html', context)
 
-
+@login_required
+@cache_page(60)
 @login_required
 def conversation_with_user(request, username):
     """
@@ -690,7 +692,8 @@ def calculate_thread_depth(message, current_depth=1):
     
     return max_depth
 
-
+@login_required
+@cache_page(60)
 @login_required
 def unread_inbox(request):
     unread_messages = Message.unread.unread_for_user(request.user).only(
@@ -710,7 +713,8 @@ def unread_inbox(request):
     
     return render(request, 'messaging/unread_inbox.html', context)
 
-
+@login_required
+@cache_page(60)
 @login_required
 def full_inbox(request):
     """

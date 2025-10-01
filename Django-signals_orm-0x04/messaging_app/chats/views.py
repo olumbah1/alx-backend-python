@@ -227,7 +227,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
         serializer = MessageSerializer(messages, many=True)
         return Response(serializer.data)
 
-
+@method_decorator(cache_page(60), name='dispatch')
 class MessageViewSet(viewsets.ModelViewSet):
     """
     ViewSet for managing messages
