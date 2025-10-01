@@ -8,7 +8,7 @@ from django.http import JsonResponse
 from .models import Message, Notification
 from django.contrib import messages as django_messages
 from django.db.models import Q
-from .models import Message, Notification
+from django.views.decorators.cache import cache_page
 
 @login_required
 @require_http_methods(["GET", "POST"])
@@ -329,6 +329,8 @@ def mark_all_notifications_read(request):
 
 
 @login_required
+@cache_page(60)
+@require_http_methods(["GET"])
 def conversation_list(request):
     """
     View to display all conversation threads for the current user.
