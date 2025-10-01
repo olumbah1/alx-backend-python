@@ -691,29 +691,19 @@ def calculate_thread_depth(message, current_depth=1):
 
 @login_required
 def unread_inbox(request):
-    """
-    View to display only unread messages for the current user.
-    Uses custom UnreadMessagesManager for optimized queries.
+    unread_messages = Message.unread.unread_for_user(request.user).only(
+        'id',
+        'sender__username',
+        'content',
+        'timestamp',
+        'is_read'
+    )
     
-    Args:
-        request: HTTP request object
-        
-    Returns:
-        Rendered template with unread messages
-    """
-    # Get unread messages using custom manager with optimization
-    unread_messages = Message.unread_messages.unread_with_preview(request.user)
-    
-    # Get inbox summary statistics
-    inbox_summary = Message.get_inbox_summary(request.user)
-    
-    # Get unread messages grouped by sender
-    unread_by_sender = Message.unread_messages.unread_by_conversation(request.user)
+    unread_count = Message.unread.unread_count(request.user)
     
     context = {
         'unread_messages': unread_messages,
-        'inbox_summary': inbox_summary,
-        'unread_by_sender': unread_by_sender,
+        'unread_count': unread_count,
     }
     
     return render(request, 'messaging/unread_inbox.html', context)
