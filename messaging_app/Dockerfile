@@ -27,8 +27,7 @@ COPY . /app/
 EXPOSE 8000
 
 # To run this container, use:
-docker run -p 8000:8000 messaging-app:latest
+# docker run -p 8000:8000 messaging-app:latest
 
 # Run migrations and start server
 CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
-DOCKERFILE
