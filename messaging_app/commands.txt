@@ -1,0 +1,24 @@
+# 1) Install the NGINX Ingress Controller (official manifest). You can use the cloud provider manifest
+# or the bare-metal one depending on your environment. Example (official ingress-nginx):
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.8.1/deploy/static/provider/cloud/deploy.yaml
+
+
+# 2) Apply the Ingress resource for the messaging_app
+kubectl apply -f ingress.yaml
+
+
+# 3) (optional) Check the created Ingress and its ADDRESS/STATUS
+kubectl get ingress messaging-app-ingress -o wide
+
+
+# 4) (optional) Tail ingress-nginx controller logs to debug
+kubectl -n ingress-nginx logs -l app.kubernetes.io/name=ingress-nginx -f
+
+---
+
+# Notes / Quick checklist
+
+* Replace `example.com` with your real domain and create a DNS A (or CNAME) record pointing that hostname to the Ingress Controller's external IP.
+* Make sure the `service.name` and `service.port.number` match the Service you exposed for your Django app.
+* If you don't have TLS yet, remove the `tls:` section. For production, create a TLS secret (e.g. via cert-manager or certbot) and reference it as `secretName`.
+* If your cluster's ingress controller is installed into a namespace other than `ingress-nginx`, update the log command's namespace.

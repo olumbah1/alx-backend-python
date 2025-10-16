@@ -1,0 +1,44 @@
+# ingress.yaml
+
+```yaml
+# Ingress for messaging_app (Django API + web)
+# Replace `example.com` with your actual domain and adjust service names/ports as needed.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: messaging-app-ingress
+  namespace: default
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    # Uncomment if using external-dns to automatically create DNS records:
+    # external-dns.alpha.kubernetes.io/hostname: "example.com"
+spec:
+  tls:
+  - hosts:
+    - example.com
+    secretName: example-com-tls  # create this secret with your TLS cert (optional)
+
+  rules:
+  - host: example.com
+    http:
+      paths:
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: messaging-app-service   # <-- your Django service name
+            port:
+              number: 8000               # <-- your Django container port (adjust if needed)
+
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: messaging-web-service  # <-- optional: frontend/static service
+            port:
+              number: 80
+```
+
+---
+
+
