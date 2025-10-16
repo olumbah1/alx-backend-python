@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# 3. Apply the service (will point to pods labeled active: "true" -> blue)
+echo "Applying service..."
+kubectl apply -f $SERVICE -n $NAMESPACE
+
+
+# 4. Deploy green beside blue
+echo "Deploying green (new) version..."
+kubectl apply -f $GREEN_DEPLOYMENT -n $NAMESPACE
+
+
+# 5. Wait for green pods to be ready
+kubectl rollout status deployment/messaging-app-green -n $NAMESPACE --timeout=120s
+
+
+# 6. Basic smoke-check: fetch recent logs from green pods and look for error keywords
+GREEN_PODS=$(kubectl get pods -n $NAMESPACE -l app=messaging-app,version=green -o name)
+if [ -z "$GREEN_PODS" ]; then
+echo "No green pods found, aborting."
+exit 1
+fi
+
+
+ERRORS=0
+for p in $GREEN_PODS; do
+echo "Checking logs for $p"
+# Grab last 200 lines and search for typical fatal/error indications
+kubectl logs -n $NAMESPACE $p --tail=200 || true
+if kubectl logs -n $NAMESPACE $p --tail=200 | egrep -i "(error|exception|traceback|panic)" >/dev/null; then
+echo "Errors detected in pod $p"
+ERRORS=$((ERRORS+1))
+fi
+done
+
+
+if [ "$ERRORS" -gt 0 ]; then
+echo "Detected errors in green deployment logs. Aborting switch and leaving blue active."
+exit 2
+fi
+
+
+# 7. Switch traffic: set green as active by toggling the `active` label on the deployments' pod templates
+# (Option A) Patch deployments' pod template labels so the Service selector now matches green pods.
+# First remove active:true from blue pods, then set active:true on green pods.
+
+
+echo "Switching traffic to green (gradual switch can be done by scaling down blue/up green instead)..."
+
+
+# Remove active label from blue's pod template (this will only affect newly created pods; patching pods directly below)
+kubectl patch deployment messaging-app-blue -n $NAMESPACE --type=json -p='[{"op":"replace","path":"/spec/template/metadata/labels/active","value":"false"}]' || true
+kubectl patch deployment messaging-app-green -n $NAMESPACE --type=json -p='[{"op":"replace","path":"/spec/template/metadata/labels/active","value":"true"}]' || true
+
+
+# Patch existing pods' labels so Service selector switches immediately
+BLUE_PODS=$(kubectl get pods -n $NAMESPACE -l app=messaging-app,version=blue -o name)
+for p in $BLUE_PODS; do
+kubectl label --overwrite $p active=false -n $NAMESPACE
+done
+for p in $GREEN_PODS; do
+kubectl label --overwrite $p active=true -n $NAMESPACE
+done
+
+
+# Verify service endpoints now point to green pods
+echo "Service endpoints after switch:"
+kubectl get endpoints messaging-app -n $NAMESPACE -o wide
+
+
+# 8. Optional: scale down blue gradually (example: scale to 1 then 0)
+#kubectl scale deployment messaging-app-blue --replicas=1 -n $NAMESPACE
+#kubectl scale deployment messaging-app-blue --replicas=0 -n $NAMESPACE
+
+
+# 9. Final rollout status check for green
+kubectl rollout status deployment/messaging-app-green -n $NAMESPACE --timeout=120s
+
+
+echo "Blue->Green switch completed successfully."

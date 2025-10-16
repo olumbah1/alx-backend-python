@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+name: messaging-app-green
+namespace: default
+labels:
+app: messaging-app
+version: green
+active: "false"
+spec:
+replicas: 3
+selector:
+matchLabels:
+app: messaging-app
+version: green
+template:
+metadata:
+labels:
+app: messaging-app
+version: green
+active: "false"
+spec:
+containers:
+- name: messaging-app
+image: myregistry/messaging-app:1.1 # <--- replace with new image version
+ports:
+- containerPort: 8000
+readinessProbe:
+httpGet:
+path: /healthz
+port: 8000
+initialDelaySeconds: 5
+periodSeconds: 10
+livenessProbe:
+httpGet:
+path: /healthz
+port: 8000
+initialDelaySeconds: 15
+periodSeconds: 20
