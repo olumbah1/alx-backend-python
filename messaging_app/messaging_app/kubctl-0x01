@@ -1,0 +1,124 @@
+#!/bin/bash
+
+# Scaling and Load testing Script for Kubernetes Cluster
+# Usage: ./kubctl-0x01
+
+set -euo pipefail
+
+# Function to check if a command exists
+command_exists() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+# Function to check prerequisites
+check_prerequisites() {
+    echo "Checking prerequisites..."
+    if ! command_exists kubectl; then
+        echo "kubectl is not installed. Please install kubectl."
+        exit 1
+    fi
+    if ! command_exists minikube && ! command_exists kind; then
+        echo "minikube or kind is not installed. Please install one of them."
+        exit 1
+    fi
+    # wrk is optional — warn if missing
+    if ! command_exists wrk; then
+        echo "Warning: wrk is not installed. Load test step will be skipped."
+    fi
+    # Check cluster connectivity
+    if ! kubectl cluster-info >/dev/null 2>&1; then
+        echo "Cannot connect to the Kubernetes cluster. Please ensure it is running."
+        exit 1
+    fi
+    echo "All prerequisites are met."
+}
+
+# Function to scale the deployment
+scale_deployment() {
+    local replicas=$1
+    echo "Scaling deployment to $replicas replicas..."
+    kubectl scale deployment messaging-app --replicas="$replicas"
+    echo "Scaling command issued. Waiting for pods to be available..."
+    # wait for condition=available ensures deployment becomes available
+    kubectl wait --for=condition=available --timeout=120s deployment/messaging-app || {
+        echo "Timeout or error waiting for deployment to become available."
+        kubectl -n default get deployment messaging-app -o wide || true
+        kubectl -n default get pods -o wide || true
+        exit 1
+    }
+    echo "Deployment scaled to $replicas replicas and is available."
+}
+
+# Function to verify scaling
+verify_scaling() {
+    local expected_replicas=$1
+    echo "Verifying scaling to $expected_replicas replicas..."
+    local actual_replicas
+    actual_replicas=$(kubectl get deployment messaging-app -o jsonpath='{.status.availableReplicas}' 2>/dev/null || echo 0)
+    actual_replicas=${actual_replicas:-0}
+    if [ "$actual_replicas" -eq "$expected_replicas" ]; then
+        echo "Scaling verified: $actual_replicas replicas are running."
+    else
+        echo "Scaling verification failed: Expected $expected_replicas but found $actual_replicas."
+        kubectl get pods -o wide || true
+        exit 1
+    fi
+    echo "Pod list:"
+    kubectl get pods
+    echo "Pod status (wide):"
+    kubectl get pods -o wide
+}
+
+# Function to perform load testing
+perform_load_test() {
+    local url=$1
+    if ! command_exists wrk; then
+        echo "wrk not found — skipping load test. Install wrk to enable this step."
+        return
+    fi
+    echo "Performing load test on $url..."
+    wrk -t2 -c100 -d30s "$url"
+    echo "Load test completed."
+}
+
+# Function to monitor resource usage
+monitor_resources() {
+    echo "Monitoring resource usage..."
+    if command_exists kubectl; then
+        if kubectl top nodes >/dev/null 2>&1; then
+            kubectl top nodes
+        else
+            echo "kubectl top nodes not available (metrics-server may not be installed). Skipping."
+        fi
+
+        if kubectl top pods --all-namespaces >/dev/null 2>&1; then
+            kubectl top pods --all-namespaces
+        else
+            echo "kubectl top pods not available (metrics-server may not be installed). Skipping."
+        fi
+    fi
+    echo "Resource usage monitored."
+}
+
+# Main Execution function
+main() {
+    check_prerequisites
+    # desired replica count (change if needed)
+    local replicas=3
+    scale_deployment "$replicas"
+    verify_scaling "$replicas"
+    # If your service is not directly reachable from host, replace url with localhost port-forward target
+    perform_load_test "http://messaging-app:8080"
+    monitor_resources
+}
+
+# Cleanup resources (if you want to call manually)
+cleanup() {
+    echo "Cleaning up resources..."
+    kubectl delete deployment messaging-app || true
+    kubectl delete service messaging-app || true
+    echo "Cleanup completed."
+}
+
+# Run the main function
+main "$@"
