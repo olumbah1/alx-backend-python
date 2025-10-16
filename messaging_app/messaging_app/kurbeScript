@@ -1,103 +1,38 @@
 #!/bin/bash
+# Kubernetes Cluster Management Script
+# This script starts a Kubernetes cluster and verifies its status
+# It also applies necessary configurations for the messaging app
+set -e
 
-# kurbeScript - Kubernetes Cluster Setup and Verification Script
-# This script starts a Kubernetes cluster using kind and verifies its operation
+# Function to start the Kubernetes cluster
+start_k8s_cluster() {
+    echo "Starting Kubernetes cluster..."
+    minikube start --driver=docker
+    echo "Kubernetes cluster started."
+}
 
-set -e  # Exit on any error
-
-echo "================================================"
-echo "Kubernetes Cluster Setup Script"
-echo "================================================"
-echo ""
-
-CLUSTER_NAME="messaging-app-cluster"
-
-# Check if kind is installed
-echo "[1/6] Checking if kind is installed..."
-if ! command -v kind &> /dev/null; then
-    echo "kind is not installed. Installing now..."
-    curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
-    chmod +x ./kind
-    sudo mv ./kind /usr/local/bin/kind
-    echo "✓ kind installed successfully"
-else
-    echo "✓ kind is installed: $(kind version)"
-fi
-
-# Check if kubectl is installed
-echo ""
-echo "[2/6] Checking if kubectl is installed..."
-if ! command -v kubectl &> /dev/null; then
-    echo "kubectl is not installed. Installing now..."
-    curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-    chmod +x kubectl
-    sudo mv kubectl /usr/local/bin/
-    echo "✓ kubectl installed successfully"
-else
-    echo "✓ kubectl is installed: $(kubectl version --client --short 2>/dev/null || echo $(kubectl version --client -o json | grep -o '"gitVersion":"[^"]*"' | cut -d'"' -f4))"
-fi
-
-# Check if Docker is running
-echo ""
-echo "[3/6] Checking if Docker is running..."
-if ! docker info &> /dev/null; then
-    echo "Docker is not running. Starting Docker..."
-    sudo service docker start
-    sleep 3
-    if ! docker info &> /dev/null; then
-        echo "ERROR: Could not start Docker. Please start Docker manually."
+# Function to verify kubernetes cluster is running
+verify_k8s_cluster() {
+    echo "Verifying Kubernetes cluster status..."
+    if minikube status | grep -q "host: Running"; then
+        echo "Kubernetes cluster is running."
+    else
+        echo "Kubernetes cluster is not running. Exiting."
         exit 1
     fi
-fi
-echo "✓ Docker is running"
+}
 
-# Start kind cluster
-echo ""
-echo "[4/6] Starting Kubernetes cluster with kind..."
-if kind get clusters 2>/dev/null | grep -q "^${CLUSTER_NAME}$"; then
-    echo "✓ Kind cluster '$CLUSTER_NAME' already exists"
-    echo "Setting kubectl context to kind cluster..."
-    kubectl cluster-info --context kind-${CLUSTER_NAME}
-else
-    echo "Creating new kind cluster: $CLUSTER_NAME"
-    kind create cluster --name "$CLUSTER_NAME" --wait 60s
-    echo "✓ Kind cluster created successfully"
-fi
+# Function to retrieve available pods using kubectl cluster-info.
+get_available_pods() {
+    echo "Retrieving available pods..."
+    kubectl get pods --all-namespaces
+}
 
-# Verify cluster is running
-echo ""
-echo "[5/6] Verifying cluster status with kubectl cluster-info..."
-echo "----------------------------------------"
-kubectl cluster-info --context kind-${CLUSTER_NAME}
-echo "----------------------------------------"
-echo "✓ Cluster is running and accessible"
-
-# Retrieve available pods
-echo ""
-echo "[6/6] Retrieving available pods across all namespaces..."
-echo "----------------------------------------"
-kubectl get pods --all-namespaces
-echo "----------------------------------------"
-
-# Additional cluster information
-echo ""
-echo "================================================"
-echo "Cluster Setup Complete!"
-echo "================================================"
-echo ""
-echo "Cluster Details:"
-echo "  - Cluster Name: $CLUSTER_NAME"
-echo "  - Kubernetes Version: $(kubectl version --short 2>/dev/null | grep Server || kubectl version -o json | grep gitVersion | head -1)"
-echo "  - Current Context: $(kubectl config current-context)"
-echo "  - Nodes:"
-kubectl get nodes
-echo ""
-echo "Useful Commands:"
-echo "  - View cluster info: kubectl cluster-info --context kind-${CLUSTER_NAME}"
-echo "  - View all pods: kubectl get pods --all-namespaces"
-echo "  - View nodes: kubectl get nodes"
-echo "  - Stop cluster: kind delete cluster --name ${CLUSTER_NAME}"
-echo "  - Create new cluster: kind create cluster --name ${CLUSTER_NAME}"
-echo "  - List clusters: kind get clusters"
-echo ""
-echo "================================================"
+# Main execution function
+main() {
+    start_k8s_cluster
+    verify_k8s_cluster
+    get_available_pods
+    echo "Kubernetes cluster setup and verification complete."
+}
+main "$@"
