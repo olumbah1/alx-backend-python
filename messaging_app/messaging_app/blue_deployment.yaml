@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+name: messaging-app-blue
+namespace: default
+labels:
+app: messaging-app
+version: blue
+active: "true"
+spec:
+replicas: 3
+selector:
+matchLabels:
+app: messaging-app
+version: blue
+template:
+metadata:
+labels:
+app: messaging-app
+version: blue
+active: "true"
+spec:
+containers:
+- name: messaging-app
+image: myregistry/messaging-app:2.0 # <-- image version updated to 2.0
+ports:
+- containerPort: 8000
+readinessProbe:
+httpGet:
+path: /healthz
+port: 8000
+initialDelaySeconds: 5
+periodSeconds: 10
+livenessProbe:
+httpGet:
+path: /healthz
+port: 8000
+initialDelaySeconds: 15
+periodSeconds: 20

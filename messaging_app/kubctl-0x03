@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+
+NAMESPACE=default
+BLUE_DEPLOYMENT=blue_deployment.yaml
+SERVICE_NAME=messaging-app
+APP_URL="http://<INGRESS_OR_LOADBALANCER_IP_OR_HOST>/" # <- replace with your app's reachable URL
+
+
+if [ "$APP_URL" = "http://<INGRESS_OR_LOADBALANCER_IP_OR_HOST>/" ]; then
+echo "Please set APP_URL to your app's public URL inside the script before running."
+exit 1
+fi
+
+
+# 1. Apply the updated blue deployment (image v2.0)
+echo "Applying updated blue deployment (image -> 2.0)..."
+kubectl apply -f $BLUE_DEPLOYMENT -n $NAMESPACE
+
+
+# 2. Trigger rolling update (by patching image) - this ensures deployment picks up the new image
+kubectl set image deployment/messaging-app-blue -n $NAMESPACE messaging-app=myregistry/messaging-app:2.0 --record
+
+
+# 3. Monitor rolling update progress
+echo "Watching rollout status..."
+kubectl rollout status deployment/messaging-app-blue -n $NAMESPACE --timeout=180s
+
+
+# 4. In parallel: continuously curl the app to detect downtime
+# We will run curl in a subshell for a fixed duration and report failures.
+DURATI
