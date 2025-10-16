@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # kurbeScript - Kubernetes Cluster Setup and Verification Script
-# This script starts a Kubernetes cluster using minikube and verifies its operation
+# This script starts a Kubernetes cluster using kind and verifies its operation
 
 set -e  # Exit on any error
 
@@ -10,52 +10,71 @@ echo "Kubernetes Cluster Setup Script"
 echo "================================================"
 echo ""
 
-# Check if minikube is installed
-echo "[1/5] Checking if minikube is installed..."
-if ! command -v minikube &> /dev/null; then
-    echo "ERROR: minikube is not installed!"
-    echo "Please install minikube first:"
-    echo "  - Linux: curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64 && sudo install minikube-linux-amd64 /usr/local/bin/minikube"
-    echo "  - macOS: brew install minikube"
-    echo "  - Windows: choco install minikube"
-    exit 1
+CLUSTER_NAME="messaging-app-cluster"
+
+# Check if kind is installed
+echo "[1/6] Checking if kind is installed..."
+if ! command -v kind &> /dev/null; then
+    echo "kind is not installed. Installing now..."
+    curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
+    chmod +x ./kind
+    sudo mv ./kind /usr/local/bin/kind
+    echo "✓ kind installed successfully"
 else
-    echo "✓ minikube is installed: $(minikube version --short)"
+    echo "✓ kind is installed: $(kind version)"
 fi
 
 # Check if kubectl is installed
 echo ""
-echo "[2/5] Checking if kubectl is installed..."
+echo "[2/6] Checking if kubectl is installed..."
 if ! command -v kubectl &> /dev/null; then
-    echo "ERROR: kubectl is not installed!"
-    echo "Please install kubectl first."
-    exit 1
+    echo "kubectl is not installed. Installing now..."
+    curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+    chmod +x kubectl
+    sudo mv kubectl /usr/local/bin/
+    echo "✓ kubectl installed successfully"
 else
-    echo "✓ kubectl is installed: $(kubectl version --client --short 2>/dev/null || kubectl version --client)"
+    echo "✓ kubectl is installed: $(kubectl version --client --short 2>/dev/null || echo $(kubectl version --client -o json | grep -o '"gitVersion":"[^"]*"' | cut -d'"' -f4))"
 fi
 
-# Start minikube cluster
+# Check if Docker is running
 echo ""
-echo "[3/5] Starting Kubernetes cluster with minikube..."
-if minikube status &> /dev/null; then
-    echo "✓ Minikube cluster is already running"
+echo "[3/6] Checking if Docker is running..."
+if ! docker info &> /dev/null; then
+    echo "Docker is not running. Starting Docker..."
+    sudo service docker start
+    sleep 3
+    if ! docker info &> /dev/null; then
+        echo "ERROR: Could not start Docker. Please start Docker manually."
+        exit 1
+    fi
+fi
+echo "✓ Docker is running"
+
+# Start kind cluster
+echo ""
+echo "[4/6] Starting Kubernetes cluster with kind..."
+if kind get clusters 2>/dev/null | grep -q "^${CLUSTER_NAME}$"; then
+    echo "✓ Kind cluster '$CLUSTER_NAME' already exists"
+    echo "Setting kubectl context to kind cluster..."
+    kubectl cluster-info --context kind-${CLUSTER_NAME}
 else
-    echo "Starting new minikube cluster..."
-    minikube start --driver=docker --cpus=2 --memory=2048
-    echo "✓ Minikube cluster started successfully"
+    echo "Creating new kind cluster: $CLUSTER_NAME"
+    kind create cluster --name "$CLUSTER_NAME" --wait 60s
+    echo "✓ Kind cluster created successfully"
 fi
 
 # Verify cluster is running
 echo ""
-echo "[4/5] Verifying cluster status with kubectl cluster-info..."
+echo "[5/6] Verifying cluster status with kubectl cluster-info..."
 echo "----------------------------------------"
-kubectl cluster-info
+kubectl cluster-info --context kind-${CLUSTER_NAME}
 echo "----------------------------------------"
 echo "✓ Cluster is running and accessible"
 
 # Retrieve available pods
 echo ""
-echo "[5/5] Retrieving available pods across all namespaces..."
+echo "[6/6] Retrieving available pods across all namespaces..."
 echo "----------------------------------------"
 kubectl get pods --all-namespaces
 echo "----------------------------------------"
@@ -67,16 +86,18 @@ echo "Cluster Setup Complete!"
 echo "================================================"
 echo ""
 echo "Cluster Details:"
-echo "  - Minikube Status: $(minikube status -o json | grep -o '"Host":"[^"]*"' | cut -d'"' -f4)"
-echo "  - Kubernetes Version: $(kubectl version --short 2>/dev/null | grep Server || kubectl version -o json | grep gitVersion)"
+echo "  - Cluster Name: $CLUSTER_NAME"
+echo "  - Kubernetes Version: $(kubectl version --short 2>/dev/null | grep Server || kubectl version -o json | grep gitVersion | head -1)"
 echo "  - Current Context: $(kubectl config current-context)"
+echo "  - Nodes:"
+kubectl get nodes
 echo ""
 echo "Useful Commands:"
-echo "  - View cluster info: kubectl cluster-info"
+echo "  - View cluster info: kubectl cluster-info --context kind-${CLUSTER_NAME}"
 echo "  - View all pods: kubectl get pods --all-namespaces"
 echo "  - View nodes: kubectl get nodes"
-echo "  - Access dashboard: minikube dashboard"
-echo "  - Stop cluster: minikube stop"
-echo "  - Delete cluster: minikube delete"
+echo "  - Stop cluster: kind delete cluster --name ${CLUSTER_NAME}"
+echo "  - Create new cluster: kind create cluster --name ${CLUSTER_NAME}"
+echo "  - List clusters: kind get clusters"
 echo ""
 echo "================================================"
