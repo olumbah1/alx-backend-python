@@ -1,12 +1,42 @@
 pipeline {
     agent any
     
+    tools {
+        python('python3')
+    }
+
+    parameters {
+        choice(
+            name: 'BRANCH',
+            choices: ['main', 'develop', 'release/v1.0'],
+            description: 'Select the branch to build'
+        )
+        string(
+            name: 'CUSTOM_BRANCH',
+            defaultValue: '',
+            description: ''
+        )
+        string(
+            name: 'DOCKER_IMAGE_TAG',
+            defaultValue: 'latest',
+            description: 'Docker image tag (default: latest)'
+        )
+    }
+    
+    environment {
+        GITHUB_CREDENTIALS = credentials('github-credentials')
+        APP_DIR = 'messaging_app'
+        TARGET_BRANCH = "${params.CUSTOM_BRANCH ?: params.BRANCH}"
+        DOCKER_IMAGE_NAME = "your-username/messaging-app"
+    }
+    
     stages {
         stage('Checkout') {
             steps {
-                echo '========== Checking out code =========='
-                checkout([$class: 'GitSCM', 
-                    branches: [[name: '*/master']], 
+                echo '========== Checking out code from GitHub =========='
+                checkout([
+                    $class: 'GitSCM',
+                    branches: [[name: '*/master']],
                     userRemoteConfigs: [[
                         url: 'https://github.com/olumbah1/alx-backend-python.git',
                         credentialsId: 'github-credentials'
@@ -15,23 +45,21 @@ pipeline {
             }
         }
         
-        stage('Setup') {
+        stage('Install Dependencies') {
             steps {
-                echo '========== Setting up Python =========='
+                echo '========== Installing Python dependencies =========='
                 script {
                     if (isUnix()) {
                         sh '''
-                            python3 -m venv venv
-                            . venv/bin/activate
-                            pip install --upgrade pip
-                            pip install -r requirements.txt
+                            python3 -m pip install --upgrade pip
+                            pip3 install -r requirements.txt
+                            pip3 install pytest pytest-cov pytest-html
                         '''
                     } else {
                         bat '''
-                            python -m venv venv
-                            venv\\Scripts\\activate.bat
                             python -m pip install --upgrade pip
                             pip install -r requirements.txt
+                            pip install pytest pytest-cov pytest-html
                         '''
                     }
                 }
@@ -44,15 +72,35 @@ pipeline {
                 script {
                     if (isUnix()) {
                         sh '''
-                            . venv/bin/activate
-                            pytest tests/ --junitxml=test-results.xml --cov=. --cov-report=html
+                            pytest tests/ --junitxml=test-results.xml --html=test-report.html --self-contained-html --cov=. --cov-report=html
                         '''
                     } else {
                         bat '''
-                            venv\\Scripts\\activate.bat
-                            pytest tests/ --junitxml=test-results.xml --cov=. --cov-report=html
+                            pytest tests/ --junitxml=test-results.xml --html=test-report.html --self-contained-html --cov=. --cov-report=html
                         '''
                     }
+                }
+            }
+            post {
+                always {
+                    echo '========== Publishing Test Results =========='
+                    junit 'test-results.xml'
+                    publishHTML(target: [
+                        reportName: 'Test Report',
+                        reportDir: '.',
+                        reportFiles: 'test-report.html',
+                        keepAll: true,
+                        allowMissing: false,
+                        alwaysLinkToLastBuild: true
+                    ])
+                    publishHTML(target: [
+                        reportName: 'Code Coverage Report',
+                        reportDir: 'htmlcov',
+                        reportFiles: 'index.html',
+                        keepAll: true,
+                        allowMissing: true,
+                        alwaysLinkToLastBuild: true
+                    ])
                 }
             }
         }
@@ -60,13 +108,15 @@ pipeline {
     
     post {
         always {
-            junit 'test-results.xml'
+            echo '========== Pipeline Execution Complete =========='
+            echo "Branch: ${TARGET_BRANCH}"
+            echo "Build URL: ${env.BUILD_URL}"
         }
         success {
-            echo '✓ Tests passed!'
+            echo '✅ All stages completed successfully!'
         }
         failure {
-            echo '✗ Tests failed!'
+            echo '❌ Pipeline failed!'
         }
     }
 }
