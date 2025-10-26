@@ -10,3 +10,8 @@ pytz==2023.3
 
 pytest==7.4.0
 pytest-cov==4.1.0
+pytest-html==3.2.0
+pytest-django==4.5.2
+mysql-connector-python==8.0.33
+coverage==7.3.0
+flake8==6.0.0
