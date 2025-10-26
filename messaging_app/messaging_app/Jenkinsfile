@@ -34,14 +34,11 @@ pipeline {
         stage('Checkout') {
             steps {
                 echo '========== Checking out code from GitHub =========='
-                checkout([
-                    $class: 'GitSCM',
-                    branches: [[name: '*/master']],
-                    userRemoteConfigs: [[
-                        url: 'https://github.com/olumbah1/alx-backend-python.git',
-                        credentialsId: 'github-credentials'
-                    ]]
-                ])
+                checkout(
+                    git branch: 'master',
+                    url: 'https://github.com/olumbah1/alx-backend-python.git',
+                    credentialsId: 'github-credentials'
+                )
             }
         }
         
