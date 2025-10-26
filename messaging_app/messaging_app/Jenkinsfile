@@ -27,7 +27,7 @@ pipeline {
         GITHUB_CREDENTIALS = credentials('github-credentials')
         APP_DIR = 'messaging_app'
         TARGET_BRANCH = "${params.CUSTOM_BRANCH ?: params.BRANCH}"
-        DOCKER_IMAGE_NAME = "your-username/messaging-app"
+        DOCKER_IMAGE_NAME = "Olumbah/messaging-app"
     }
     
     stages {
@@ -49,13 +49,13 @@ pipeline {
                     if (isUnix()) {
                         sh '''
                             python3 -m pip install --upgrade pip
-                            pip3 install -r requirements.txt
+                            pip3 install -r messaging_app/requirements.txt
                             pip3 install pytest pytest-cov pytest-html
                         '''
                     } else {
                         bat '''
                             python -m pip install --upgrade pip
-                            pip install -r requirements.txt
+                            pip install -r messaging_app/requirements.txt
                             pip install pytest pytest-cov pytest-html
                         '''
                     }
