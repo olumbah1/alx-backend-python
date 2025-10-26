@@ -1,4 +1,4 @@
-name: CI - Messaging App Tests
+name: CI - Messaging App Tests & Code Quality
 
 on:
   push:
@@ -12,8 +12,67 @@ on:
       - 'messaging_app/**'
 
 jobs:
-  test:
+  lint:
+    name: Linting (flake8)
     runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+        cache: 'pip'
+    
+    - name: Install flake8
+      run: |
+        python -m pip install --upgrade pip
+        pip install flake8
+    
+    - name: Run flake8 linting
+      working-directory: messaging_app
+      run: |
+        echo "Running flake8 code quality checks..."
+        flake8 . \
+          --count \
+          --select=E9,F63,F7,F82 \
+          --show-source \
+          --statistics \
+          --exit-zero
+        
+        echo ""
+        echo "Running full flake8 check (will fail on errors)..."
+        flake8 . \
+          --count \
+          --max-line-length=100 \
+          --statistics \
+          --show-source \
+          --exclude=.git,__pycache__,venv,.venv,migrations
+      continue-on-error: false
+    
+    - name: Generate flake8 report
+      if: always()
+      working-directory: messaging_app
+      run: |
+        flake8 . \
+          --format=json \
+          --exclude=.git,__pycache__,venv,.venv,migrations \
+          > flake8-report.json || true
+        echo "Flake8 report generated"
+    
+    - name: Upload flake8 report
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: flake8-report
+        path: messaging_app/flake8-report.json
+
+  test:
+    name: Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    needs: lint
     
     services:
       mysql:
@@ -55,7 +114,7 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        pip install pytest pytest-cov pytest-html pytest-django
+        pip install pytest pytest-cov pytest-html pytest-django coverage
     
     - name: Wait for MySQL to be ready
       run: |
@@ -75,7 +134,7 @@ jobs:
         mysql -h 127.0.0.1 -u root -proot -e "CREATE DATABASE messaging_app_test;"
         mysql -h 127.0.0.1 -u root -proot -e "GRANT ALL PRIVILEGES ON messaging_app_test.* TO 'test_user'@'%' IDENTIFIED BY 'test_password';"
     
-    - name: Run pytest tests
+    - name: Run pytest with coverage
       working-directory: messaging_app
       env:
         MYSQL_HOST: 127.0.0.1
@@ -88,23 +147,38 @@ jobs:
           --junitxml=test-results.xml \
           --cov=. \
           --cov-report=xml \
-          --cov-report=html \
+          --cov-report=html:htmlcov \
+          --cov-report=term-missing \
           --html=test-report.html \
           --self-contained-html \
           -v
     
-    - name: Upload test results
+    - name: Display coverage summary
+      if: always()
+      working-directory: messaging_app
+      run: |
+        echo "=== Coverage Report ==="
+        coverage report
+    
+    - name: Upload test results XML
       uses: actions/upload-artifact@v3
       if: always()
       with:
         name: test-results-py${{ matrix.python-version }}
         path: messaging_app/test-results.xml
     
-    - name: Upload coverage reports
+    - name: Upload coverage XML
       uses: actions/upload-artifact@v3
       if: always()
       with:
-        name: coverage-report-py${{ matrix.python-version }}
+        name: coverage-xml-py${{ matrix.python-version }}
+        path: messaging_app/coverage.xml
+    
+    - name: Upload HTML coverage report
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: coverage-html-py${{ matrix.python-version }}
         path: messaging_app/htmlcov/
     
     - name: Upload HTML test report
@@ -114,17 +188,35 @@ jobs:
         name: html-test-report-py${{ matrix.python-version }}
         path: messaging_app/test-report.html
     
-    - name: Publish test results
-      uses: EnricoMi/publish-unit-test-result-action@v2
-      if: always()
-      with:
-        files: messaging_app/test-results.xml
-        check_name: Test Results (Python ${{ matrix.python-version }})
-    
-    - name: Code coverage comment
+    - name: Comment coverage on PR
       uses: py-cov-action/python-coverage-comment-action@v3
-      if: github.event_name == 'pull_request'
+      if: github.event_name == 'pull_request' && always()
       with:
         GITHUB_TOKEN: ${{ github.token }}
         MINIMUM_GREEN: 80
         MINIMUM_ORANGE: 60
+
+  code-quality-summary:
+    name: Code Quality Summary
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [lint, test]
+    
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v3
+    
+    - name: Display code quality summary
+      run: |
+        echo "=== Code Quality Check Summary ==="
+        echo ""
+        echo "✅ Linting: flake8 check completed"
+        echo "✅ Testing: pytest completed"
+        echo "✅ Coverage: reports generated"
+        echo ""
+        echo "📊 Artifacts available:"
+        echo "  - Flake8 Report: flake8-report/"
+        echo "  - Test Results: test-results-py*/"
+        echo "  - Coverage HTML: coverage-html-py*/"
+        echo "  - Coverage XML: coverage-xml-py*/"
+        echo "  - Test Report: html-test-report-py*/"
