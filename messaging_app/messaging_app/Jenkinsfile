@@ -1,101 +1,50 @@
 pipeline {
     agent any
     
-    tools {
-        python('python3')
-    }
-
-    parameters {
-        choice(
-            name: 'BRANCH',
-            choices: ['main', 'develop', 'release/v1.0'],
-            description: 'Select the branch to build'
-        )
-        string(
-            name: 'CUSTOM_BRANCH',
-            defaultValue: '',
-            description: ''
-        )
-        string(
-            name: 'DOCKER_IMAGE_TAG',
-            defaultValue: 'latest',
-            description: 'Docker image tag (default: latest)'
-        )
-    }
-    
-    environment {
-        GITHUB_CREDENTIALS = credentials('github-credentials')
-        APP_DIR = 'messaging_app'
-        TARGET_BRANCH = "${params.CUSTOM_BRANCH ?: params.BRANCH}"
-        DOCKER_IMAGE_NAME = "Olumbah/messaging-app"
-    }
-    
     stages {
         stage('Checkout') {
             steps {
                 echo '========== Checking out code from GitHub =========='
-                checkout(
-                    git branch: 'master',
-                    url: 'https://github.com/olumbah1/alx-backend-python.git',
-                    credentialsId: 'github-credentials'
-                )
+                checkout([
+                    $class: 'GitSCM',
+                    branches: [[name: '*/master']],
+                    userRemoteConfigs: [[
+                        url: 'https://github.com/olumbah1/alx-backend-python.git',
+                        credentialsId: 'github-credentials'
+                    ]]
+                ])
             }
         }
         
         stage('Install Dependencies') {
             steps {
                 echo '========== Installing Python dependencies =========='
-                script {
-                    if (isUnix()) {
-                        sh '''
-                            python3 -m pip install --upgrade pip
-                            pip3 install -r messaging_app/requirements.txt
-                            pip3 install pytest pytest-cov pytest-html
-                        '''
-                    } else {
-                        bat '''
-                            python -m pip install --upgrade pip
-                            pip install -r messaging_app/requirements.txt
-                            pip install pytest pytest-cov pytest-html
-                        '''
-                    }
-                }
+                sh '''
+                    cd messaging_app
+                    python3 -m pip install --upgrade pip
+                    pip3 install -r requirements.txt
+                    pip3 install pytest pytest-cov pytest-html
+                '''
             }
         }
         
         stage('Run Tests') {
             steps {
                 echo '========== Running pytest =========='
-                script {
-                    if (isUnix()) {
-                        sh '''
-                            pytest tests/ --junitxml=test-results.xml --html=test-report.html --self-contained-html --cov=. --cov-report=html
-                        '''
-                    } else {
-                        bat '''
-                            pytest tests/ --junitxml=test-results.xml --html=test-report.html --self-contained-html --cov=. --cov-report=html
-                        '''
-                    }
-                }
+                sh '''
+                    cd messaging_app
+                    pytest tests/ --junitxml=test-results.xml --html=test-report.html --self-contained-html -v
+                '''
             }
             post {
                 always {
-                    echo '========== Publishing Test Results =========='
-                    junit 'test-results.xml'
+                    junit 'messaging_app/test-results.xml'
                     publishHTML(target: [
                         reportName: 'Test Report',
-                        reportDir: '.',
+                        reportDir: 'messaging_app',
                         reportFiles: 'test-report.html',
                         keepAll: true,
                         allowMissing: false,
-                        alwaysLinkToLastBuild: true
-                    ])
-                    publishHTML(target: [
-                        reportName: 'Code Coverage Report',
-                        reportDir: 'htmlcov',
-                        reportFiles: 'index.html',
-                        keepAll: true,
-                        allowMissing: true,
                         alwaysLinkToLastBuild: true
                     ])
                 }
@@ -106,11 +55,9 @@ pipeline {
     post {
         always {
             echo '========== Pipeline Execution Complete =========='
-            echo "Branch: ${TARGET_BRANCH}"
-            echo "Build URL: ${env.BUILD_URL}"
         }
         success {
-            echo '✅ All stages completed successfully!'
+            echo '✅ Pipeline succeeded!'
         }
         failure {
             echo '❌ Pipeline failed!'
