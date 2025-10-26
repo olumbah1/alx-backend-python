@@ -1,0 +1,82 @@
+pipeline {
+    agent any
+    
+    environment {
+        PYTHON_ENV = 'venv'
+    }
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                echo '========== Checking out code from GitHub =========='
+                checkout scm
+            }
+        }
+        
+        stage('Setup') {
+            steps {
+                echo '========== Setting up Python environment =========='
+                script {
+                    if (isUnix()) {
+                        sh '''
+                            python3 -m venv ${PYTHON_ENV}
+                            . ${PYTHON_ENV}/bin/activate
+                            pip install --upgrade pip
+                            pip install -r requirements.txt
+                        '''
+                    } else {
+                        bat '''
+                            python -m venv %PYTHON_ENV%
+                            %PYTHON_ENV%\\Scripts\\activate.bat
+                            python -m pip install --upgrade pip
+                            pip install -r requirements.txt
+                        '''
+                    }
+                }
+            }
+        }
+        
+        stage('Run Tests') {
+            steps {
+                echo '========== Running pytest =========='
+                script {
+                    if (isUnix()) {
+                        sh '''
+                            . ${PYTHON_ENV}/bin/activate
+                            pytest tests/ --junitxml=test-results.xml --cov=src --cov-report=xml --cov-report=html
+                        '''
+                    } else {
+                        bat '''
+                            %PYTHON_ENV%\\Scripts\\activate.bat
+                            pytest tests/ --junitxml=test-results.xml --cov=src --cov-report=xml --cov-report=html
+                        '''
+                    }
+                }
+            }
+        }
+        
+        stage('Generate Report') {
+            steps {
+                echo '========== Generating test reports =========='
+                junit 'test-results.xml'
+                publishHTML([
+                    reportDir: 'htmlcov',
+                    reportFiles: 'index.html',
+                    reportName: 'Code Coverage Report'
+                ])
+            }
+        }
+    }
+    
+    post {
+        always {
+            echo '========== Pipeline Execution Complete =========='
+        }
+        success {
+            echo '✓ Pipeline succeeded!'
+        }
+        failure {
+            echo '✗ Pipeline failed!'
+        }
+    }
+}
